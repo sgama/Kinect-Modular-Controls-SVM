@@ -1,0 +1,12 @@
+﻿Build started 4/18/2015 10:49:12 AM.
+     1>Project "C:\Users\Samson Gama\Documents\GitHub\UIE2015\OpenCVAttempt\OpenCVAttempt\OpenCVAttempt\OpenCVAttempt.vcxproj" on node 2 (Build target(s)).
+     1>Link:
+         C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin\link.exe /ERRORREPORT:PROMPT /OUT:"C:\Users\Samson Gama\Documents\GitHub\UIE2015\OpenCVAttempt\OpenCVAttempt\Debug\OpenCVAttempt.exe" /INCREMENTAL /NOLOGO /LIBPATH:C:\opencv\build\x86\vc12\lib opencv_calib3d2411d.lib opencv_contrib2411d.lib opencv_core2411d.lib opencv_features2d2411d.lib opencv_flann2411d.lib opencv_gpu2411d.lib opencv_highgui2411d.lib opencv_imgproc2411d.lib opencv_legacy2411d.lib opencv_ml2411d.lib opencv_objdetect2411d.lib opencv_ts2411d.lib opencv_video2411d.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"C:\Users\Samson Gama\Documents\GitHub\UIE2015\OpenCVAttempt\OpenCVAttempt\Debug\OpenCVAttempt.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"C:\Users\Samson Gama\Documents\GitHub\UIE2015\OpenCVAttempt\OpenCVAttempt\Debug\OpenCVAttempt.lib" /MACHINE:X86 Debug\main.obj
+         Debug\stdafx.obj
+     1>main.obj : error LNK2019: unresolved external symbol _GetDefaultKinectSensor@4 referenced in function _main
+     1>C:\Users\Samson Gama\Documents\GitHub\UIE2015\OpenCVAttempt\OpenCVAttempt\Debug\OpenCVAttempt.exe : fatal error LNK1120: 1 unresolved externals
+     1>Done Building Project "C:\Users\Samson Gama\Documents\GitHub\UIE2015\OpenCVAttempt\OpenCVAttempt\OpenCVAttempt\OpenCVAttempt.vcxproj" (Build target(s)) -- FAILED.
+
+Build FAILED.
+
+Time Elapsed 00:00:00.17
