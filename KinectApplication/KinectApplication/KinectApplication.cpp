@@ -1,4 +1,4 @@
-// KinectApplication.cpp : Defines the entry point for the console application.
+﻿// KinectApplication.cpp : Defines the entry point for the console application.
 //
 
 #include "stdafx.h"
@@ -63,23 +63,26 @@ int _tmain(int argc, _TCHAR* argv[]){
 	pDescription->get_Width(&width); // 1920
 	pDescription->get_Height(&height); // 1080
 	unsigned int bufferSize = width * height * 4 * sizeof(unsigned char);
+	double scaleX = 0.4;
+	double scaleY = 0.4;
 
 	cv::Mat bufferMat(height, width, CV_8UC4);
-	cv::Mat colorMat(height / 2, width / 2, CV_8UC4);
+	cv::Mat colorMat(height * scaleY, width * scaleX, CV_8UC4);
 	cv::namedWindow("Color");
-
-	while (1){
+	
+	while (1) {
 		// Frame
 		IColorFrame* pColorFrame = nullptr;
 		hResult = pColorReader->AcquireLatestFrame(&pColorFrame);
 		if (SUCCEEDED(hResult)){
 			hResult = pColorFrame->CopyConvertedFrameDataToArray(bufferSize, reinterpret_cast<BYTE*>(bufferMat.data), ColorImageFormat::ColorImageFormat_Bgra);
 			if (SUCCEEDED(hResult)){
-				cv::resize(bufferMat, colorMat, cv::Size(), 0.5, 0.5);
+				cv::resize(bufferMat, colorMat, cv::Size(), scaleX, scaleY);
 			}
 
-			//Canny stuff could be attempted here
-
+			cvtColor(colorMat, colorMat, CV_BGR2GRAY);
+			GaussianBlur(colorMat, colorMat, cv::Size(7, 7), 1.5, 1.5);
+			Canny(colorMat, colorMat, 0, 30, 3);
 		}
 		SafeRelease(pColorFrame);
 
