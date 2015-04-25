@@ -2,10 +2,12 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.ComponentModel;
 using Windows.Foundation;
 using Windows.Foundation.Collections;
+using Windows.Storage.Streams;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Controls.Primitives;
@@ -31,6 +33,10 @@ namespace Kinect2Sample {
         private FrameDescription currentFrameDescription;
         private DisplayFrameType currentDisplayFrameType;
 
+        private MultiSourceFrameReader multiSourceFrameReader = null;
+        private CoordinateMapper coordinateMapper = null;
+        private BodiesManager bodiesManager = null; // responsible for organizing and drawing all the tracked bodies in a frame
+
         //Infrared Frame
         private ushort[] infraredFrameData = null; // Intermediate storage for receiving frame data from the sensor
         private byte[] infraredPixels = null; // Intermediate storage for frame data converted to color pixels for display
@@ -39,56 +45,43 @@ namespace Kinect2Sample {
         private ushort[] depthFrameData = null;
         private byte[] depthPixels = null;
 
+        //BodyMask Frames
+        private DepthSpacePoint[] colorMappedToDepthPoints = null;
+
+        //Body Joints are drawn here
+        private Canvas drawingCanvas;
+
         private const int BytesPerPixel = 4; // Size of the RGB pixel in the bitmap
 
+        /// The highest value that can be returned in the InfraredFrame. It is cast to a float for readability in the visualization code.
+        private const float InfraredSourceValueMaximum = (float)ushort.MaxValue;
 
-        private MultiSourceFrameReader multiSourceFrameReader = null;
-
-        /// <summary>
-        /// The highest value that can be returned in the InfraredFrame.
-        /// It is cast to a float for readability in the visualization code.
-        /// </summary>
-        private const float InfraredSourceValueMaximum =
-            (float)ushort.MaxValue;
-
-        /// </summary>
-        /// Used to set the lower limit, post processing, of the
-        /// infrared data that we will render.
-        /// Increasing or decreasing this value sets a brightness
-        /// "wall" either closer or further away.
-        /// </summary>
+        /// Used to set the lower limit, post processing, of theinfrared data that we will render.
+        /// Increasing or decreasing this value sets a brightness "wall" either closer or further away.
         private const float InfraredOutputValueMinimum = 0.01f;
 
-        /// <summary>
-        /// The upper limit, post processing, of the
-        /// infrared data that will render.
-        /// </summary>
+        /// The upper limit, post processing, of the infrared data that will render.
         private const float InfraredOutputValueMaximum = 1.0f;
 
-        /// <summary>
-        /// The InfraredSceneValueAverage value specifies the 
-        /// average infrared value of the scene. 
-        /// This value was selected by analyzing the average
-        /// pixel intensity for a given scene.
-        /// This could be calculated at runtime to handle different
-        /// IR conditions of a scene (outside vs inside).
-        /// </summary>
+        /// The InfraredSceneValueAverage value specifies the average infrared value of the scene. 
+        /// This value was selected by analyzing the average pixel intensity for a given scene.
+        /// This could be calculated at runtime to handle different IR conditions of a scene (outside vs inside).
         private const float InfraredSceneValueAverage = 0.08f;
 
-        /// <summary>
-        /// The InfraredSceneStandardDeviations value specifies 
-        /// the number of standard deviations to apply to
-        /// InfraredSceneValueAverage.
-        /// This value was selected by analyzing data from a given scene.
-        /// This could be calculated at runtime to handle different
+        /// The InfraredSceneStandardDeviations value specifies the number of standard deviations to apply to InfraredSceneValueAverage.
+        /// This value was selected by analyzing data from a given scene. This could be calculated at runtime to handle different
         /// IR conditions of a scene (outside vs inside).
-        /// </summary>
         private const float InfraredSceneStandardDeviations = 3.0f;
 
+        // The Body Mask display requires three frame types from the MultiSourceFrame (infrared, color, depth)
+        // To use these and dispose of them all at once it’s more appropriate to use a try, finally pattern
+        // In the finally section, all the used objects can be disposed of at once.
         public enum DisplayFrameType {
             Infrared,
             Color,
-            Depth
+            Depth,
+            BodyMask,
+            BodyJoints
         }
 
         public MainPage() {
@@ -97,9 +90,14 @@ namespace Kinect2Sample {
             // currently selected state to initialize the bitmap with the right size
             SetupCurrentDisplay(DEFAULT_DISPLAYFRAMETYPE);
 
+            // If all the feeds from the Kinect were from the same camera with the same type
+            // there would be no need to map as they would already be naturally relative to one another
+            this.coordinateMapper = this.kinectSensor.CoordinateMapper;
+
             //The MultiSourceFrameReader is initialized with the FrameSourceTypes which will be used,
             // so it is important to remember that to add new frame types
-            this.multiSourceFrameReader = this.kinectSensor.OpenMultiSourceFrameReader(FrameSourceTypes.Infrared | FrameSourceTypes.Color | FrameSourceTypes.Depth);
+            this.multiSourceFrameReader = this.kinectSensor.
+                OpenMultiSourceFrameReader(FrameSourceTypes.Infrared | FrameSourceTypes.Color | FrameSourceTypes.Depth | FrameSourceTypes.BodyIndex | FrameSourceTypes.Body);
             // set MultiSourceFrameArrived event notifier
             this.multiSourceFrameReader.MultiSourceFrameArrived += this.Reader_MultiSourceFrameArrived;
 
@@ -126,22 +124,79 @@ namespace Kinect2Sample {
                 return;
             }
 
+            DepthFrame depthFrame = null;
+            ColorFrame colorFrame = null;
+            InfraredFrame infraredFrame = null;
+            BodyIndexFrame bodyIndexFrame = null;
+            BodyFrame bodyFrame = null;
+            //windows.storage.streams
+            IBuffer depthFrameDataBuffer = null;
+            IBuffer bodyIndexFrameData = null;
+            IBufferByteAccess bodyIndexByteAccess = null; // Com interface for unsafe byte manipulation
+
             switch (currentDisplayFrameType) {
                 case DisplayFrameType.Infrared:
-                    using (InfraredFrame infraredFrame = multiSourceFrame.InfraredFrameReference.AcquireFrame()) {
+                    using (infraredFrame = multiSourceFrame.InfraredFrameReference.AcquireFrame()) {
                         ShowInfraredFrame(infraredFrame);
                     }
                     break;
                 case DisplayFrameType.Color:
-                    using (ColorFrame colorFrame = multiSourceFrame.ColorFrameReference.AcquireFrame()) {
+                    using (colorFrame = multiSourceFrame.ColorFrameReference.AcquireFrame()) {
                         ShowColorFrame(colorFrame);
                     }
                     break;
                 case DisplayFrameType.Depth:
-                    using (DepthFrame depthFrame = multiSourceFrame.DepthFrameReference.AcquireFrame()) {
+                    using (depthFrame = multiSourceFrame.DepthFrameReference.AcquireFrame()) {
                         ShowDepthFrame(depthFrame);
                     }
                     break;
+                case DisplayFrameType.BodyMask:
+                    // Put in a try catch to utilise finally() and clean up frames
+                    try {
+                        depthFrame = multiSourceFrame.DepthFrameReference.AcquireFrame();
+                        bodyIndexFrame = multiSourceFrame.BodyIndexFrameReference.AcquireFrame();
+                        colorFrame = multiSourceFrame.ColorFrameReference.AcquireFrame();
+                        if ((depthFrame == null) || (colorFrame == null) || (bodyIndexFrame == null)) {
+                            return;
+                        }
+
+                        // Access the depth frame data directly via LockImageBuffer to avoid making a copy
+                        depthFrameDataBuffer = depthFrame.LockImageBuffer();
+                        this.coordinateMapper.MapColorFrameToDepthSpaceUsingIBuffer(depthFrameDataBuffer, this.colorMappedToDepthPoints);
+                        // Process Color
+                        colorFrame.CopyConvertedFrameDataToBuffer(this.bitmap.PixelBuffer,ColorImageFormat.Bgra);
+                        // Access the body index frame data directly via LockImageBuffer to avoid making a copy
+                        bodyIndexFrameData = bodyIndexFrame.LockImageBuffer();
+                        ShowMappedBodyFrame(depthFrame.FrameDescription.Width, depthFrame.FrameDescription.Height, bodyIndexFrameData, bodyIndexByteAccess);
+                    } finally {
+                        if (depthFrame != null) {
+                            depthFrame.Dispose();
+                        }
+                        if (colorFrame != null) {
+                            colorFrame.Dispose();
+                        }
+                        if (bodyIndexFrame != null) {
+                            bodyIndexFrame.Dispose();
+                        }
+
+                        if (depthFrameDataBuffer != null) {
+                            // We must force a release of the IBuffer in order toensure that we have dropped all references to it.
+                            System.Runtime.InteropServices.Marshal.ReleaseComObject(depthFrameDataBuffer);
+                        }
+                        if (bodyIndexFrameData != null) {
+                            System.Runtime.InteropServices.Marshal.ReleaseComObject(bodyIndexFrameData);
+                        }
+                        if (bodyIndexByteAccess != null) {
+                            System.Runtime.InteropServices.Marshal.ReleaseComObject(bodyIndexByteAccess);
+                        }
+                    }
+                    break;
+                case DisplayFrameType.BodyJoints:
+                    using (bodyFrame = multiSourceFrame.BodyFrameReference.AcquireFrame()) {
+                        ShowBodyJoints(bodyFrame);
+                    }
+                    break;
+
                 default:
                     break;
             }
@@ -224,6 +279,67 @@ namespace Kinect2Sample {
             }
         }
 
+        // Using pointers in C# is also known as unsafe code because the memory management is done manually.
+        // Unsafe code must be allowed by the project settings before it can build. 
+        // Unsafe code generally performs better, but only when used correctly and optimized during the build.
+        unsafe private void ShowMappedBodyFrame(int depthWidth, int depthHeight, IBuffer bodyIndexFrameData, IBufferByteAccess bodyIndexByteAccess) {
+            bodyIndexByteAccess = (IBufferByteAccess)bodyIndexFrameData;
+            byte* bodyIndexBytes = null;
+            bodyIndexByteAccess.Buffer(out bodyIndexBytes);
+
+            fixed (DepthSpacePoint* colorMappedToDepthPointsPointer = this.colorMappedToDepthPoints) {
+                IBufferByteAccess bitmapBackBufferByteAccess = (IBufferByteAccess)this.bitmap.PixelBuffer;
+
+                byte* bitmapBackBufferBytes = null;
+                bitmapBackBufferByteAccess.Buffer(out bitmapBackBufferBytes);
+
+                // Treat the color data as 4-byte pixels
+                uint* bitmapPixelsPointer = (uint*)bitmapBackBufferBytes;
+
+                // Loop over each row and column of the color image. Zero out any pixels that don't correspond to a body index
+                int colorMappedLength = this.colorMappedToDepthPoints.Length;
+                for (int colorIndex = 0; colorIndex < colorMappedLength; ++colorIndex) {
+                    float colorMappedToDepthX = colorMappedToDepthPointsPointer[colorIndex].X;
+                    float colorMappedToDepthY = colorMappedToDepthPointsPointer[colorIndex].Y;
+
+                    // The sentinel value is -inf, -inf, meaning that no depth pixel corresponds to this color pixel.
+                    if (!float.IsNegativeInfinity(colorMappedToDepthX) && !float.IsNegativeInfinity(colorMappedToDepthY)) {
+                        // Make sure the depth pixel maps to a valid point in color space
+                        int depthX = (int)(colorMappedToDepthX + 0.5f);
+                        int depthY = (int)(colorMappedToDepthY + 0.5f);
+
+                        // If the point is not valid, there is no body index there.
+                        if ((depthX >= 0) && (depthX < depthWidth) && (depthY >= 0) && (depthY < depthHeight)) {
+                            int depthIndex = (depthY * depthWidth) + depthX;
+
+                            // If we are tracking a body for the current pixel,do not zero out the pixel
+                            if (bodyIndexBytes[depthIndex] != 0xff) {
+                                // this bodyIndexByte is good and is a body, loop again.
+                                continue;
+                            }
+                        }
+                    }
+                    // this pixel does not correspond to a body so make it black and transparent
+                    bitmapPixelsPointer[colorIndex] = 0;
+                }
+            }
+
+            this.bitmap.Invalidate();
+            FrameDisplayImage.Source = this.bitmap;
+        }
+
+        private void ShowBodyJoints(BodyFrame bodyFrame) {
+            Body[] bodies = new Body[ this.kinectSensor.BodyFrameSource.BodyCount];
+            bool dataReceived = false;
+            if (bodyFrame != null) {
+                bodyFrame.GetAndRefreshBodyData(bodies);
+                dataReceived = true;
+            }
+
+            if (dataReceived) {
+                this.bodiesManager.UpdateBodiesAndEdges(bodies);
+            }
+        }
 
         // Convert the infrared to RGB
         private void ConvertInfraredDataToPixels() {
@@ -277,6 +393,17 @@ namespace Kinect2Sample {
 
         private void SetupCurrentDisplay(DisplayFrameType newDisplayFrameType) {
             currentDisplayFrameType = newDisplayFrameType;
+            // Frames used by more than one type are declared outside the switch
+            FrameDescription colorFrameDescription = null;
+
+            // reset the display methods; prevents the xaml elements from rendering on top of one another
+            if (this.BodyJointsGrid != null) {
+                this.BodyJointsGrid.Visibility = Visibility.Collapsed;
+            }
+            if (this.FrameDisplayImage != null) {
+                this.FrameDisplayImage.Source = null;
+            }
+
             switch (currentDisplayFrameType) {
                 case DisplayFrameType.Infrared:
                     // get the infraredFrameDescription from the InfraredFrameSource
@@ -289,7 +416,7 @@ namespace Kinect2Sample {
                     this.bitmap = new WriteableBitmap(infraredFrameDescription.Width, infraredFrameDescription.Height);
                     break;
                 case DisplayFrameType.Color:
-                    FrameDescription colorFrameDescription = this.kinectSensor.ColorFrameSource.FrameDescription;
+                    colorFrameDescription = this.kinectSensor.ColorFrameSource.FrameDescription;
                     this.CurrentFrameDescription = colorFrameDescription;
                     // create the bitmap to display
                     this.bitmap =  new WriteableBitmap(colorFrameDescription.Width, colorFrameDescription.Height);
@@ -302,6 +429,28 @@ namespace Kinect2Sample {
                     this.depthFrameData =  new ushort[depthFrameDescription.Width * depthFrameDescription.Height];
                     this.depthPixels =  new byte[depthFrameDescription.Width * depthFrameDescription.Height * BytesPerPixel];
                     this.bitmap = new WriteableBitmap(depthFrameDescription.Width, depthFrameDescription.Height);
+                    break;
+                case DisplayFrameType.BodyMask:
+                    colorFrameDescription = this.kinectSensor.ColorFrameSource.FrameDescription;
+                    this.CurrentFrameDescription = colorFrameDescription;
+                    // allocate space to put the pixels being received and converted
+                    this.colorMappedToDepthPoints = new DepthSpacePoint[colorFrameDescription.Width * colorFrameDescription.Height];
+                    this.bitmap = new WriteableBitmap(colorFrameDescription.Width, colorFrameDescription.Height);
+                    break;
+                case DisplayFrameType.BodyJoints:
+                    // instantiate a new Canvas
+                    this.drawingCanvas = new Canvas();
+                    // set the clip rectangle to prevent rendering outside the canvas
+                    this.drawingCanvas.Clip = new RectangleGeometry();
+                    this.drawingCanvas.Clip.Rect = new Rect(0.0, 0.0, this.BodyJointsGrid.Width, this.BodyJointsGrid.Height);
+                    this.drawingCanvas.Width = this.BodyJointsGrid.Width;
+                    this.drawingCanvas.Height = this.BodyJointsGrid.Height;
+                    // reset the body joints grid
+                    this.BodyJointsGrid.Visibility = Visibility.Visible;
+                    this.BodyJointsGrid.Children.Clear();
+                    // add canvas to DisplayGrid
+                    this.BodyJointsGrid.Children.Add(this.drawingCanvas);
+                    bodiesManager = new BodiesManager(this.coordinateMapper, this.drawingCanvas, this.kinectSensor.BodyFrameSource.BodyCount);
                     break;
                 default:
                     break;
@@ -348,6 +497,22 @@ namespace Kinect2Sample {
         //XAML onClick method
         private void DepthButton_Click(object sender, RoutedEventArgs e) {
             SetupCurrentDisplay(DisplayFrameType.Depth);
+        }
+
+        //XAML onClick method
+        private void BodyMask_Click(object sender, RoutedEventArgs e) {
+            SetupCurrentDisplay(DisplayFrameType.BodyMask);
+        }
+
+        private void BodyJointsButton_Click(object sender, RoutedEventArgs e){
+            SetupCurrentDisplay(DisplayFrameType.BodyJoints);
+        }
+
+        // To expose and manipulate the buffer behind the destination bitmap
+        // you can use a Com interface called IBufferByteAccess through interop services
+        [Guid("905a0fef-bc53-11df-8c49-001e4fc686da"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        interface IBufferByteAccess {
+            unsafe void Buffer(out byte* pByte);
         }
 
     }

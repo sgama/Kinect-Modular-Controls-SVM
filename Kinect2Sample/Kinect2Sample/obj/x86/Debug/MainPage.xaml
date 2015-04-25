@@ -46,13 +46,21 @@
             </StackPanel>
 
             <Image x:Name="FrameDisplayImage" Grid.Row="1" Stretch="Uniform"/>
-            <Image x:Name="FrameDisplayImage1" Grid.Row="1" Stretch="Uniform"/>
+            <Viewbox Grid.Row="1" HorizontalAlignment="Center">
+                <Grid x:Name="BodyJointsGrid" Background="Transparent" Width="512" Height="414"/>
+            </Viewbox>
 
             <ScrollViewer Grid.Row="2" ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto">
                 <StackPanel Orientation="Horizontal">
                     <Button x:ConnectionId='1' Content="Infrared" Style="{StaticResource FrameSelectorButtonStyle}"                             />
                     <Button x:ConnectionId='2' Content="Color" Style="{StaticResource FrameSelectorButtonStyle}"                          />
                     <Button x:ConnectionId='3' Content="Depth" Style="{StaticResource FrameSelectorButtonStyle}"                          />
+                    <Button x:ConnectionId='4' Style="{StaticResource FrameSelectorButtonStyle}"                       >
+                        <TextBlock Text="Body Mask" TextWrapping="Wrap"/>
+                    </Button>
+                    <Button x:ConnectionId='5' Style="{StaticResource FrameSelectorButtonStyle}"                               >
+                        <TextBlock Text="Body Joints" TextWrapping="Wrap"/>
+                    </Button>
                 </StackPanel>
             </ScrollViewer>
 
