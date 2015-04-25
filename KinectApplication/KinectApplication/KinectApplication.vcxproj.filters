@@ -41,4 +41,8 @@
       <Filter>Resource Files</Filter>
     </ResourceCompile>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="HandUp.gba" />
+    <None Include="Swipe.gba" />
+  </ItemGroup>
 </Project>

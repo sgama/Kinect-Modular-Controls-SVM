@@ -101,6 +101,10 @@
   <ItemGroup>
     <ResourceCompile Include="KinectApplication.rc" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="HandUp.gba" />
+    <None Include="Swipe.gba" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

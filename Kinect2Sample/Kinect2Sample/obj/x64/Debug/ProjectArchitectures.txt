@@ -1,0 +1,1 @@
+C:\Users\Samson Gama\Documents\GitHub\UIE2015\Kinect2Sample\Kinect2Sample\Kinect2Sample.csproj;x64

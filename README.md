@@ -1,2 +1,0 @@
-# UIE2015
-UIE2015 Class

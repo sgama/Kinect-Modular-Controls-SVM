@@ -5,6 +5,8 @@
 #include <iostream>
 #include <Windows.h>
 #include <Kinect.h>
+#include <Kinect.VisualGestureBuilder.h>
+
 #include <opencv2/opencv.hpp>
 #include <opencv2/core/core.hpp>
 
@@ -69,7 +71,9 @@ int _tmain(int argc, _TCHAR* argv[]){
 	cv::Mat bufferMat(height, width, CV_8UC4);
 	cv::Mat colorMat(height * scaleY, width * scaleX, CV_8UC4);
 	cv::namedWindow("Color");
-	
+
+	cv::VideoCapture capture(CV_CAP_OPENNI);
+
 	while (1) {
 		// Frame
 		IColorFrame* pColorFrame = nullptr;

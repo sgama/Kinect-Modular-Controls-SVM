@@ -1,0 +1,9 @@
+C:\Users\Samson Gama\Documents\GitHub\UIE2015\KinectSkeleton\KinectSkeleton\bin\Debug\KinectSkeleton.exe.config
+C:\Users\Samson Gama\Documents\GitHub\UIE2015\KinectSkeleton\KinectSkeleton\obj\Debug\KinectSkeleton.csprojResolveAssemblyReference.cache
+C:\Users\Samson Gama\Documents\GitHub\UIE2015\KinectSkeleton\KinectSkeleton\obj\Debug\MainWindow.baml
+C:\Users\Samson Gama\Documents\GitHub\UIE2015\KinectSkeleton\KinectSkeleton\obj\Debug\MainWindow.g.cs
+C:\Users\Samson Gama\Documents\GitHub\UIE2015\KinectSkeleton\KinectSkeleton\obj\Debug\App.g.cs
+C:\Users\Samson Gama\Documents\GitHub\UIE2015\KinectSkeleton\KinectSkeleton\obj\Debug\KinectSkeleton_MarkupCompile.cache
+C:\Users\Samson Gama\Documents\GitHub\UIE2015\KinectSkeleton\KinectSkeleton\obj\Debug\KinectSkeleton.g.resources
+C:\Users\Samson Gama\Documents\GitHub\UIE2015\KinectSkeleton\KinectSkeleton\obj\Debug\KinectSkeleton.Properties.Resources.resources
+C:\Users\Samson Gama\Documents\GitHub\UIE2015\KinectSkeleton\KinectSkeleton\obj\Debug\KinectSkeleton.csproj.GenerateResource.Cache
