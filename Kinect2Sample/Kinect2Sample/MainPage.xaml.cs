@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -17,6 +18,9 @@ using Windows.UI.Xaml.Media;
 using Windows.UI.Xaml.Navigation;
 using Windows.UI.Xaml.Media.Imaging;
 using WindowsPreview.Kinect;
+using Emgu.CV;
+using Emgu.CV.Structure;
+using Emgu.CV.UI;
 
 namespace Kinect2Sample {
 
@@ -230,13 +234,32 @@ namespace Kinect2Sample {
             if (colorFrame != null) {
                 FrameDescription colorFrameDescription = colorFrame.FrameDescription;
 
+                var imgBuffer = new Byte[colorFrameDescription.BytesPerPixel * colorFrameDescription.Width * colorFrameDescription.Height];
+
                 // verify data and write the new color frame data to the Writeable bitmap
                 if ((colorFrameDescription.Width == this.bitmap.PixelWidth) && (colorFrameDescription.Height == this.bitmap.PixelHeight)) {
                     if (colorFrame.RawColorImageFormat == ColorImageFormat.Bgra) {
-                        colorFrame.CopyRawFrameDataToBuffer(this.bitmap.PixelBuffer);
+                        colorFrame.CopyRawFrameDataToArray(imgBuffer);
+                        
+  
+
                     } else {
-                        colorFrame.CopyConvertedFrameDataToBuffer(this.bitmap.PixelBuffer, ColorImageFormat.Bgra);
+                        colorFrame.CopyConvertedFrameDataToArray(imgBuffer, ColorImageFormat.Bgra);
                     }
+
+                    using (var ms = new MemoryStream(imgBuffer))
+                    {
+                        System.Drawing.Bitmap bmp = new System.Drawing.Bitmap(ms);
+
+
+                        //canny on bmp
+
+                        using (Stream outStream = this.bitmap.PixelBuffer.AsStream())
+                        {
+                            bmp.Save(outStream, System.Drawing.Imaging.ImageFormat.Png);
+                        }
+                    }
+
                     colorFrameProcessed = true;
                 }
             }

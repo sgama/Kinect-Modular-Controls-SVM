@@ -17,13 +17,13 @@
     <AppXManifest Include="C:\Users\Samson Gama\Documents\GitHub\UIE2015\Kinect2Sample\Kinect2Sample\bin\x86\Debug\AppxManifest.xml">
       <PackagePath>AppxManifest.xml</PackagePath>
       <ReRegisterAppIfChanged>true</ReRegisterAppIfChanged>
-      <Modified>2015-04-25T15:53:31.805</Modified>
+      <Modified>2015-04-29T14:18:54.391</Modified>
     </AppXManifest>
   </ItemGroup>
   <ItemGroup>
     <AppxPackagedFile Include="C:\Users\Samson Gama\Documents\GitHub\UIE2015\Kinect2Sample\Kinect2Sample\bin\x86\Debug\Kinect2Sample.exe">
       <PackagePath>Kinect2Sample.exe</PackagePath>
-      <Modified>2015-04-25T16:29:36.732</Modified>
+      <Modified>2015-04-29T14:18:53.866</Modified>
     </AppxPackagedFile>
     <AppxPackagedFile Include="C:\Users\Samson Gama\Documents\GitHub\UIE2015\Kinect2Sample\Kinect2Sample\Assets\Logo.scale-100.png">
       <PackagePath>Assets\Logo.scale-100.png</PackagePath>
@@ -51,11 +51,11 @@
     </AppxPackagedFile>
     <AppxPackagedFile Include="C:\Users\Samson Gama\Documents\GitHub\UIE2015\Kinect2Sample\Kinect2Sample\bin\x86\Debug\MainPage.xbf">
       <PackagePath>MainPage.xbf</PackagePath>
-      <Modified>2015-04-25T16:22:46.120</Modified>
+      <Modified>2015-04-29T13:44:21.907</Modified>
     </AppxPackagedFile>
     <AppxPackagedFile Include="C:\Users\Samson Gama\Documents\GitHub\UIE2015\Kinect2Sample\Kinect2Sample\bin\x86\Debug\resources.pri">
       <PackagePath>resources.pri</PackagePath>
-      <Modified>2015-04-25T15:53:31.769</Modified>
+      <Modified>2015-04-29T14:18:54.258</Modified>
     </AppxPackagedFile>
   </ItemGroup>
   <ItemGroup>

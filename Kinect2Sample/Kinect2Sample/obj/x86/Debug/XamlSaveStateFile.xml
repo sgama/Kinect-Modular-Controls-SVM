@@ -4,5 +4,11 @@
     <ReferenceAssembly PathName="c:\program files (x86)\microsoft sdks\windows\v8.1\extensionsdks\microsoft.vclibs\12.0\references\commonconfiguration\neutral\platform.winmd" HashGuid="58b6b6d1-928e-9908-9804-eb460e5e101b" />
     <ReferenceAssembly PathName="c:\program files (x86)\microsoft sdks\windows\v8.1\extensionsdks\windowspreview.kinect\2.0\references\commonconfiguration\neutral\windowspreview.data.winmd" HashGuid="bec3b354-5b74-1234-191f-25a435755c0a" />
     <ReferenceAssembly PathName="c:\program files (x86)\microsoft sdks\windows\v8.1\extensionsdks\windowspreview.kinect\2.0\references\commonconfiguration\neutral\windowspreview.kinect.winmd" HashGuid="d7412096-a3c7-9108-a946-0ff0cc614d3f" />
+    <ReferenceAssembly PathName="c:\users\samson gama\documents\github\uie2015\kinect2sample\packages\emgucv.221.x64.1.5\lib\emgu.cv.dll" HashGuid="070e389f-7033-147e-51e5-1d6ee32fa215" />
+    <ReferenceAssembly PathName="c:\users\samson gama\documents\github\uie2015\kinect2sample\packages\emgucv.221.x64.1.5\lib\emgu.cv.gpu.dll" HashGuid="8dedea44-81a2-9463-b050-0e1bae66e9a2" />
+    <ReferenceAssembly PathName="c:\users\samson gama\documents\github\uie2015\kinect2sample\packages\emgucv.221.x64.1.5\lib\emgu.cv.ml.dll" HashGuid="7e31ae43-9b23-3cd1-f241-de7b9130e515" />
+    <ReferenceAssembly PathName="c:\users\samson gama\documents\github\uie2015\kinect2sample\packages\emgucv.221.x64.1.5\lib\emgu.cv.ui.dll" HashGuid="e4c2eaf1-ab00-1cf8-67ec-2de7821fab62" />
+    <ReferenceAssembly PathName="c:\users\samson gama\documents\github\uie2015\kinect2sample\packages\emgucv.221.x64.1.5\lib\emgu.util.dll" HashGuid="56c47080-7194-f3f1-f761-ccc408ca0aaf" />
+    <ReferenceAssembly PathName="c:\program files (x86)\reference assemblies\microsoft\framework\.netframework\v4.5.1\system.drawing.dll" HashGuid="70c0470e-69a7-4709-811a-3b4da99f38a0" />
   </ReferenceAssemblyList>
 </XamlCompilerSaveState>
