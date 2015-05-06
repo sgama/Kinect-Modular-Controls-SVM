@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -240,22 +239,16 @@ namespace Kinect2Sample {
                 if ((colorFrameDescription.Width == this.bitmap.PixelWidth) && (colorFrameDescription.Height == this.bitmap.PixelHeight)) {
                     if (colorFrame.RawColorImageFormat == ColorImageFormat.Bgra) {
                         colorFrame.CopyRawFrameDataToArray(imgBuffer);
-                        
-  
-
                     } else {
                         colorFrame.CopyConvertedFrameDataToArray(imgBuffer, ColorImageFormat.Bgra);
                     }
 
-                    using (var ms = new MemoryStream(imgBuffer))
-                    {
+                    using (var ms = new MemoryStream(imgBuffer)){
                         System.Drawing.Bitmap bmp = new System.Drawing.Bitmap(ms);
-
-
                         //canny on bmp
 
-                        using (Stream outStream = this.bitmap.PixelBuffer.AsStream())
-                        {
+                        Windows.Graphics.Imaging.SoftwareBitmap sb;
+                        using (Stream outStream = this.bitmap.PixelBuffer.AsStream()){
                             bmp.Save(outStream, System.Drawing.Imaging.ImageFormat.Png);
                         }
                     }

@@ -9,6 +9,6 @@
     <ReferenceAssembly PathName="c:\users\samson gama\documents\github\uie2015\kinect2sample\packages\emgucv.221.x64.1.5\lib\emgu.cv.ml.dll" HashGuid="7e31ae43-9b23-3cd1-f241-de7b9130e515" />
     <ReferenceAssembly PathName="c:\users\samson gama\documents\github\uie2015\kinect2sample\packages\emgucv.221.x64.1.5\lib\emgu.cv.ui.dll" HashGuid="e4c2eaf1-ab00-1cf8-67ec-2de7821fab62" />
     <ReferenceAssembly PathName="c:\users\samson gama\documents\github\uie2015\kinect2sample\packages\emgucv.221.x64.1.5\lib\emgu.util.dll" HashGuid="56c47080-7194-f3f1-f761-ccc408ca0aaf" />
-    <ReferenceAssembly PathName="c:\program files (x86)\reference assemblies\microsoft\framework\.netframework\v4.5.1\system.drawing.dll" HashGuid="70c0470e-69a7-4709-811a-3b4da99f38a0" />
+    <ReferenceAssembly PathName="c:\program files (x86)\reference assemblies\microsoft\framework\.netframework\v4.0\system.drawing.dll" HashGuid="201e25ce-18f7-69f1-73a8-82c8b87a6baf" />
   </ReferenceAssemblyList>
 </XamlCompilerSaveState>
