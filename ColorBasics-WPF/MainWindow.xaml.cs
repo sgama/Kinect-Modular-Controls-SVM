@@ -210,17 +210,19 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                             BitmapSource source = BitmapSource.Create(colorFrameDescription.Width, colorFrameDescription.Height, 96, 96, PixelFormats.Bgr32, null, pixels, stride);
 
                             Bitmap bitmap;
-                            using (MemoryStream outStream = new MemoryStream()){
+                            using (MemoryStream outStream = new MemoryStream()) {
                                 BitmapEncoder enc = new BmpBitmapEncoder();
                                 enc.Frames.Add(BitmapFrame.Create(source));
                                 enc.Save(outStream);
                                 bitmap = new Bitmap(outStream);
                             }
-                            //Image<Bgra, Byte> cvImg = new Image<Bgra, Byte>(bitmap);
-                            //source = imageToBitmapSource(cvImg);
 
                             Mat testMat = BitmapConverter.ToMat(bitmap);
-                            testMat.Canny(5, 10, 3, false);
+                            bitmap.Dispose();
+                           // Mat testMat2 = new Mat(new OpenCvSharp.CPlusPlus.Size(640,480), MatType.CV_16S );
+                           // testMat.Resize(new OpenCvSharp.CPlusPlus.Size(640, 480));
+                            //Mat.Resize(testMat, testMat2, Size(), 2, 2, INTER_CUBIC); // upscale 2x
+                            //testMat.Canny(5, 10, 3, false);
 
                             bitmap = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(testMat);
                             source = ConvertBitmap(bitmap);
@@ -234,7 +236,10 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                             this.colorBitmap.WritePixels(new Int32Rect(0, 0, source.PixelWidth, source.PixelHeight),data, stride, 0);
 
                             /*
-                            colorFrame.CopyConvertedFrameDataToIntPtr(this.colorBitmap.BackBuffer,(uint)(colorFrameDescription.Width * colorFrameDescription.Height * 4),ColorImageFormat.Bgra);*/
+                            colorFrame.CopyConvertedFrameDataToIntPtr(
+                                this.colorBitmap.BackBuffer,
+                                (uint)(colorFrameDescription.Width * colorFrameDescription.Height * 4),
+                                ColorImageFormat.Bgra);*/
 
                             this.colorBitmap.AddDirtyRect(new Int32Rect(0, 0, this.colorBitmap.PixelWidth, this.colorBitmap.PixelHeight));
                         }
@@ -250,6 +255,16 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                           Int32Rect.Empty,
                           BitmapSizeOptions.FromEmptyOptions());
         }
+
+        public class Alpha{
+            public void Beta(){
+                while (true){
+                    Console.WriteLine("Alpha.Beta is running in its own thread.");
+                }
+            }
+        };
+
+
         /*
         public static BitmapSource imageToBitmapSource(Image<Bgr, Byte> img){
             Bitmap bitmap = img.Bitmap;
