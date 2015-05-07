@@ -9,6 +9,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
     using System.ComponentModel;
     using System.Diagnostics;
     using System.Globalization;
+    using System.Threading;
     using System.IO;
     using System.Windows;
     using System.Windows.Media;
@@ -50,36 +51,109 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         /// </summary>
         public MainWindow()
         {
-            // get the kinectSensor object
-            this.kinectSensor = KinectSensor.GetDefault();
+            this.kinectSensor = KinectSensor.GetDefault(); // get the kinectSensor object
 
-            // open the reader for the color frames
-            this.colorFrameReader = this.kinectSensor.ColorFrameSource.OpenReader();
+            this.colorFrameReader = this.kinectSensor.ColorFrameSource.OpenReader(); // open the reader for the color frames
+            this.colorFrameReader.FrameArrived += this.Reader_ColorFrameArrived;  // wire handler for frame arrival
+            FrameDescription colorFrameDescription = this.kinectSensor.ColorFrameSource.CreateFrameDescription(ColorImageFormat.Bgra);// create the colorFrameDescription from the ColorFrameSource using Bgra format
+            this.colorBitmap = new WriteableBitmap(colorFrameDescription.Width, colorFrameDescription.Height, 96.0, 96.0, PixelFormats.Bgr32, null); // create the bitmap to display
 
-            // wire handler for frame arrival
-            this.colorFrameReader.FrameArrived += this.Reader_ColorFrameArrived;
+            this.kinectSensor.IsAvailableChanged += this.Sensor_IsAvailableChanged; // set IsAvailableChanged event notifier
 
-            // create the colorFrameDescription from the ColorFrameSource using Bgra format
-            FrameDescription colorFrameDescription = this.kinectSensor.ColorFrameSource.CreateFrameDescription(ColorImageFormat.Bgra);
+            this.kinectSensor.Open(); // open the sensor
 
-            // create the bitmap to display
-            this.colorBitmap = new WriteableBitmap(colorFrameDescription.Width, colorFrameDescription.Height, 96.0, 96.0, PixelFormats.Bgr32, null);
+            this.StatusText = this.kinectSensor.IsAvailable ? Properties.Resources.RunningStatusText : Properties.Resources.NoSensorStatusText; // set the status text
+            this.DataContext = this; // use the window object as the view model in this simple example
+            this.InitializeComponent(); // initialize the components (controls) of the window
+        }
 
-            // set IsAvailableChanged event notifier
-            this.kinectSensor.IsAvailableChanged += this.Sensor_IsAvailableChanged;
+        /// <summary>
+        /// Handles the color frame data arriving from the sensor
+        /// </summary>
+        /// <param name="sender">object sending the event</param>
+        /// <param name="e">event arguments</param>
+        private void Reader_ColorFrameArrived(object sender, ColorFrameArrivedEventArgs e)
+        {
+            // ColorFrame is IDisposable
+            using (ColorFrame colorFrame = e.FrameReference.AcquireFrame())
+            {
+                if (colorFrame != null)
+                {
+                    FrameDescription colorFrameDescription = colorFrame.FrameDescription;
 
-            // open the sensor
-            this.kinectSensor.Open();
+                    using (KinectBuffer colorBuffer = colorFrame.LockRawImageBuffer())
+                    {
+                        this.colorFrameReader.IsPaused = true;
+                        this.colorBitmap.Lock();
 
-            // set the status text
+                        // verify data and write the new color frame data to the display bitmap
+                        if ((colorFrameDescription.Width == this.colorBitmap.PixelWidth) && (colorFrameDescription.Height == this.colorBitmap.PixelHeight))
+                        {
+                            byte[] pixels = new byte[colorFrameDescription.Height * colorFrameDescription.Width * 4];
+                            colorFrame.CopyConvertedFrameDataToArray(pixels, ColorImageFormat.Bgra);
+                            int stride = colorFrameDescription.Width * 4;
+                            BitmapSource source = BitmapSource.Create(colorFrameDescription.Width, colorFrameDescription.Height, 96, 96, PixelFormats.Bgr32, null, pixels, stride);
+
+                            byte[] data;
+                            Bitmap bitmap;
+                            using (MemoryStream outStream = new MemoryStream())
+                            {
+                                BitmapEncoder enc = new BmpBitmapEncoder();
+                                enc.Frames.Add(BitmapFrame.Create(source));
+                                enc.Save(outStream);
+                                bitmap = new Bitmap(outStream);
+                            }
+
+                            Mat testMat = BitmapConverter.ToMat(bitmap);
+                            MatOfDouble mu = new MatOfDouble();
+                            MatOfDouble sigma = new MatOfDouble();
+                            Cv2.MeanStdDev(testMat, mu, sigma);
+                            double mean = mu.GetArray(0, 0)[0];
+                            mu.Dispose();
+                            sigma.Dispose();
+
+                            Cv2.CvtColor(testMat, testMat, ColorConversion.BgraToGray, 0);
+                            testMat = testMat.GaussianBlur(new OpenCvSharp.CPlusPlus.Size(1, 1), 5, 5, BorderType.Default);
+                            testMat = testMat.Canny(0.5 * mean, 1.2 * mean, 3, true);
+                            int width = source.PixelWidth;
+                            int height = source.PixelHeight;
+                            bitmap = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(testMat);
+                            testMat.Dispose();
+                            source = ConvertBitmap(bitmap);
+                            bitmap.Dispose();
+                            stride = width * (source.Format.BitsPerPixel / 8); // Calculate stride of source
+                            data = new byte[stride * height]; // Create data array to hold source pixel data
+                            source.CopyPixels(data, stride, 0); // Copy source image pixels to the data array
+
+                            // Write the pixel data to the WriteableBitmap.
+                            this.colorBitmap.WritePixels(new Int32Rect(0, 0, width, height), data, stride, 0);
+                            this.colorBitmap.AddDirtyRect(new Int32Rect(0, 0, width, height));
+                        }
+
+                        this.colorBitmap.Unlock();
+                        this.colorFrameReader.IsPaused = false;
+                    }
+                }
+            }
+        }
+
+        public static BitmapSource ConvertBitmap(Bitmap source)
+        {
+            return System.Windows.Interop.Imaging.CreateBitmapSourceFromHBitmap(source.GetHbitmap(), IntPtr.Zero,
+                          Int32Rect.Empty,
+                          BitmapSizeOptions.FromEmptyOptions());
+        }
+
+        /// <summary>
+        /// Handles the event which the sensor becomes unavailable (E.g. paused, closed, unplugged).
+        /// </summary>
+        /// <param name="sender">object sending the event</param>
+        /// <param name="e">event arguments</param>
+        private void Sensor_IsAvailableChanged(object sender, IsAvailableChangedEventArgs e)
+        {
+            // on failure, set the status text
             this.StatusText = this.kinectSensor.IsAvailable ? Properties.Resources.RunningStatusText
-                                                            : Properties.Resources.NoSensorStatusText;
-
-            // use the window object as the view model in this simple example
-            this.DataContext = this;
-
-            // initialize the components (controls) of the window
-            this.InitializeComponent();
+                                                            : Properties.Resources.SensorNotAvailableStatusText;
         }
 
         /// <summary>
@@ -113,7 +187,6 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                 if (this.statusText != value)
                 {
                     this.statusText = value;
-
                     // notify any bound elements that the text has changed
                     if (this.PropertyChanged != null)
                     {
@@ -153,21 +226,15 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         {
             if (this.colorBitmap != null)
             {
-                // create a png bitmap encoder which knows how to save a .png file
-                BitmapEncoder encoder = new PngBitmapEncoder();
-
-                // create frame from the writable bitmap and add to encoder
-                encoder.Frames.Add(BitmapFrame.Create(this.colorBitmap));
+                BitmapEncoder encoder = new PngBitmapEncoder(); // create a png bitmap encoder which knows how to save a .png file
+                encoder.Frames.Add(BitmapFrame.Create(this.colorBitmap)); // create frame from the writable bitmap and add to encoder
 
                 string time = System.DateTime.Now.ToString("hh'-'mm'-'ss", CultureInfo.CurrentUICulture.DateTimeFormat);
-
                 string myPhotos = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
-
                 string path = Path.Combine(myPhotos, "KinectScreenshot-Color-" + time + ".png");
 
-                // write the new file to disk
                 try
-                {
+                { // write the new file to disk
                     // FileStream is IDisposable
                     using (FileStream fs = new FileStream(path, FileMode.Create))
                     {
@@ -181,116 +248,6 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                     this.StatusText = string.Format(Properties.Resources.FailedScreenshotStatusTextFormat, path);
                 }
             }
-        }
-
-        /// <summary>
-        /// Handles the color frame data arriving from the sensor
-        /// </summary>
-        /// <param name="sender">object sending the event</param>
-        /// <param name="e">event arguments</param>
-        private void Reader_ColorFrameArrived(object sender, ColorFrameArrivedEventArgs e)
-        {
-            // ColorFrame is IDisposable
-            using (ColorFrame colorFrame = e.FrameReference.AcquireFrame())
-            {
-                if (colorFrame != null)
-                {
-                    FrameDescription colorFrameDescription = colorFrame.FrameDescription;
-
-                    using (KinectBuffer colorBuffer = colorFrame.LockRawImageBuffer())
-                    {
-                        this.colorBitmap.Lock();
-
-                        // verify data and write the new color frame data to the display bitmap
-                        if ((colorFrameDescription.Width == this.colorBitmap.PixelWidth) && (colorFrameDescription.Height == this.colorBitmap.PixelHeight))
-                        {
-                            byte[] pixels = new byte[colorFrameDescription.Height * colorFrameDescription.Width * 4];
-                            colorFrame.CopyConvertedFrameDataToArray(pixels, ColorImageFormat.Bgra);
-                            int stride = colorFrameDescription.Width * 4;
-                            BitmapSource source = BitmapSource.Create(colorFrameDescription.Width, colorFrameDescription.Height, 96, 96, PixelFormats.Bgr32, null, pixels, stride);
-
-                            Bitmap bitmap;
-                            using (MemoryStream outStream = new MemoryStream()) {
-                                BitmapEncoder enc = new BmpBitmapEncoder();
-                                enc.Frames.Add(BitmapFrame.Create(source));
-                                enc.Save(outStream);
-                                bitmap = new Bitmap(outStream);
-                            }
-
-                            Mat testMat = BitmapConverter.ToMat(bitmap);
-                            bitmap.Dispose();
-                           // Mat testMat2 = new Mat(new OpenCvSharp.CPlusPlus.Size(640,480), MatType.CV_16S );
-                           // testMat.Resize(new OpenCvSharp.CPlusPlus.Size(640, 480));
-                            //Mat.Resize(testMat, testMat2, Size(), 2, 2, INTER_CUBIC); // upscale 2x
-                            //testMat.Canny(5, 10, 3, false);
-
-                            bitmap = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(testMat);
-                            source = ConvertBitmap(bitmap);
-                            // Calculate stride of source
-                            stride = source.PixelWidth * (source.Format.BitsPerPixel / 8);
-                            // Create data array to hold source pixel data
-                            byte[] data = new byte[stride * source.PixelHeight];
-                            // Copy source image pixels to the data array
-                            source.CopyPixels(data, stride, 0);
-                            // Write the pixel data to the WriteableBitmap.
-                            this.colorBitmap.WritePixels(new Int32Rect(0, 0, source.PixelWidth, source.PixelHeight),data, stride, 0);
-
-                            /*
-                            colorFrame.CopyConvertedFrameDataToIntPtr(
-                                this.colorBitmap.BackBuffer,
-                                (uint)(colorFrameDescription.Width * colorFrameDescription.Height * 4),
-                                ColorImageFormat.Bgra);*/
-
-                            this.colorBitmap.AddDirtyRect(new Int32Rect(0, 0, this.colorBitmap.PixelWidth, this.colorBitmap.PixelHeight));
-                        }
-
-                        this.colorBitmap.Unlock();
-                    }
-                }
-            }
-        }
-
-        public static BitmapSource ConvertBitmap(Bitmap source){
-            return System.Windows.Interop.Imaging.CreateBitmapSourceFromHBitmap(source.GetHbitmap(),IntPtr.Zero,
-                          Int32Rect.Empty,
-                          BitmapSizeOptions.FromEmptyOptions());
-        }
-
-        public class Alpha{
-            public void Beta(){
-                while (true){
-                    Console.WriteLine("Alpha.Beta is running in its own thread.");
-                }
-            }
-        };
-
-
-        /*
-        public static BitmapSource imageToBitmapSource(Image<Bgr, Byte> img){
-            Bitmap bitmap = img.Bitmap;
-            if (bitmap == null)
-                throw new ArgumentNullException("bitmap");
-
-            lock (bitmap) {
-                IntPtr hBitmap = bitmap.GetHbitmap();
-
-                try {
-                    return System.Windows.Interop.Imaging.CreateBitmapSourceFromHBitmap(hBitmap, IntPtr.Zero, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
-                } finally{
-                }
-            }
-        }
-        */
-        /// <summary>
-        /// Handles the event which the sensor becomes unavailable (E.g. paused, closed, unplugged).
-        /// </summary>
-        /// <param name="sender">object sending the event</param>
-        /// <param name="e">event arguments</param>
-        private void Sensor_IsAvailableChanged(object sender, IsAvailableChangedEventArgs e)
-        {
-            // on failure, set the status text
-            this.StatusText = this.kinectSensor.IsAvailable ? Properties.Resources.RunningStatusText
-                                                            : Properties.Resources.SensorNotAvailableStatusText;
         }
     }
 }
