@@ -54,10 +54,10 @@
         <Image Grid.Row="0" Source="Images\Status.png" Stretch="None" HorizontalAlignment="Center" Margin="0 0 0 5" />
 
         <Viewbox Grid.Row="1" Grid.Column="0" HorizontalAlignment="Center">
-            <Image Source="{Binding ImageSource}" Stretch="UniformToFill" />
+            <Image Source="{Binding ColorImageSource}" Stretch="UniformToFill" />
         </Viewbox>
         <Viewbox Grid.Row="1" Grid.Column="1" HorizontalAlignment="Center">
-            <Image Source="{Binding ImageSource2}" Stretch="UniformToFill" />
+            <Image Source="{Binding DepthImageSource}" Stretch="UniformToFill" />
         </Viewbox>
 
         <Button Grid.Row="2" Style="{StaticResource ScreenshotButton}" Content="Screenshot" Height="Auto" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="10 10 0 10" Click="ScreenshotButton_Click" />

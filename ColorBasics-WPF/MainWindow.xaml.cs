@@ -50,8 +50,6 @@ namespace Microsoft.Samples.Kinect.ColorBasics
 
         //Depth Frame
         private ushort[] depthFrameData = null;
-        private byte[] depthPixels = null;
-        private const int BytesPerPixel = 4; // Size of the RGB pixel in the bitmap
 
         //check performance in ticks
         private const long TICKS_PER_SECOND = 10000000; //according to msdn
@@ -68,20 +66,18 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         {
             this.kinectSensor = KinectSensor.GetDefault(); // get the kinectSensor object
 
+            this.depthFrameData = new ushort[depthFrameDescription.Width * depthFrameDescription.Height];
+
             this.colorFrameDescription = this.kinectSensor.ColorFrameSource.CreateFrameDescription(this.colorImageFormat);
             this.depthFrameDescription = this.kinectSensor.DepthFrameSource.FrameDescription;
 
-            this.depthFrameData = new ushort[depthFrameDescription.Width * depthFrameDescription.Height];
-            this.depthPixels = new byte[depthFrameDescription.Width * depthFrameDescription.Height * BytesPerPixel];
-
             this.colorBitmap = new WriteableBitmap(this.colorFrameDescription.Width, this.colorFrameDescription.Height, 96.0, 96.0, PixelFormats.Bgr32, null); // create the bitmap to display  
             this.depthBitmap = new WriteableBitmap(this.depthFrameDescription.Width, this.depthFrameDescription.Height, 96.0, 96.0, PixelFormats.Bgr32, null);
+            
             this.multiSourceFrameReader = this.kinectSensor.OpenMultiSourceFrameReader(FrameSourceTypes.Color | FrameSourceTypes.Depth);
-
             this.multiSourceFrameReader.MultiSourceFrameArrived += MultiSourceFrameReader_MultiSourceFrameArrived;
 
             this.kinectSensor.IsAvailableChanged += this.Sensor_IsAvailableChanged; // set IsAvailableChanged event notifier
-
             this.kinectSensor.Open(); // open the sensor
 
             this.fpsText = "FPS = 0";
@@ -113,90 +109,75 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         /// </summary>
         /// <param name="sender">object sending the event</param>
         /// <param name="e">event arguments</param>
-        void MultiSourceFrameReader_MultiSourceFrameArrived(object sender, MultiSourceFrameArrivedEventArgs e)
+        private unsafe void MultiSourceFrameReader_MultiSourceFrameArrived(object sender, MultiSourceFrameArrivedEventArgs e)
         {
             MultiSourceFrame reference = e.FrameReference.AcquireFrame();
+            calculateFps();
 
             if (reference == null)
             {
-                Debug.WriteLine("Send to debug output.");
+                Console.Out.WriteLine("MultiSourceFrameReader is null");
                 return;
             }
             
-            // ColorFrame is IDisposable
             using (ColorFrame colorFrame = reference.ColorFrameReference.AcquireFrame())
             using (DepthFrame depthFrame = reference.DepthFrameReference.AcquireFrame())
             {
-                
                 if (colorFrame != null)
                 {
+                    this.multiSourceFrameReader.IsPaused = true;
                     FrameDescription colorFrameDescription = colorFrame.FrameDescription;
 
                     using (KinectBuffer colorBuffer = colorFrame.LockRawImageBuffer())
                     {
+						depthFrame.CopyFrameDataToArray(depthFrameData);
+                        BitmapSource depthSource = ToBitmap(depthFrame);
+                        Bitmap depthBitmap = getBitmap(depthSource);
+                        writeToBackBuffer(ConvertBitmap(depthBitmap), this.depthBitmap);
+                        depthBitmap.Dispose();
 
-                        // verify data and write the new color frame data to the display bitmap
-                        if ((colorFrameDescription.Width == this.colorBitmap.PixelWidth) && (colorFrameDescription.Height == this.colorBitmap.PixelHeight))
-                        {
-                            BitmapSource source = getColorImage(colorFrameDescription, colorFrame);
-                            Bitmap bitmap = getBitmap(source);
-                            OpenCV(ref bitmap);
+                        BitmapSource colorSource = getColorImage(colorFrameDescription, colorFrame);
+                        Bitmap colorBitmap = getBitmap(colorSource);
+                        OpenCV(ref colorBitmap);
 
-                            Bitmap bitmap;
-                            using (MemoryStream outStream = new MemoryStream())
-                            {
-                                BitmapEncoder enc = new BmpBitmapEncoder();
-                                enc.Frames.Add(BitmapFrame.Create(source));
-                                enc.Save(outStream);
-                                bitmap = new Bitmap(outStream);
-                            }
-
-                            openCV(ref bitmap);
-                            
-                            writeToBackBuffer(ConvertBitmap(bitmap));
-                            bitmap.Dispose();
-                        }
-
+                        writeToBackBuffer(ConvertBitmap(colorBitmap), this.colorBitmap);
+                        colorBitmap.Dispose();
                     }
                 }
                 this.multiSourceFrameReader.IsPaused = false;
             }
-
         }
 
-        public BitmapSource ToBitmap(DepthFrame frame)
+        public unsafe BitmapSource ToBitmap(DepthFrame depthFrame)
         {
-            //System.Windows.Media.PixelFormat _format = System.Windows.Media.PixelFormats.Bgr32;
-            int width = frame.FrameDescription.Width;
-            int height = frame.FrameDescription.Height;
+            int width = depthFrame.FrameDescription.Width;
+            int height = depthFrame.FrameDescription.Height;
 
-            ushort minDepth = frame.DepthMinReliableDistance;
-            ushort maxDepth = frame.DepthMaxReliableDistance;
+            ushort minDepth = depthFrame.DepthMinReliableDistance;
+            ushort maxDepth = depthFrame.DepthMaxReliableDistance;
 
             ushort[] depthData = new ushort[width * height];
             byte[] pixelData = new byte[width * height * (PixelFormats.Bgr32.BitsPerPixel + 7) / 8];
 
-            frame.CopyFrameDataToArray(depthData);
+            int stride = width * PixelFormats.Bgr32.BitsPerPixel / 8;
+
+            depthFrame.CopyFrameDataToArray(depthData);
 
             int colorIndex = 0;
             for (int depthIndex = 0; depthIndex < depthData.Length; ++depthIndex)
             {
                 ushort depth = depthData[depthIndex];
                 byte intensity = (byte)(depth >= minDepth && depth <= maxDepth ? depth : 0);
-
                 pixelData[colorIndex++] = intensity; // Blue
                 pixelData[colorIndex++] = intensity; // Green
                 pixelData[colorIndex++] = intensity; // Red
-
                 ++colorIndex;
             }
-
-            int stride = width * PixelFormats.Bgr32.BitsPerPixel / 8;
 
             return BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgr32, null, pixelData, stride);
         }
 
-        private void writeToBackBuffer(BitmapSource source, WriteableBitmap bitmap)
+        private unsafe void writeToBackBuffer(BitmapSource source, WriteableBitmap bitmap)
         {
             bitmap.Lock();
             int stride = source.PixelWidth * (source.Format.BitsPerPixel / 8); // Calculate stride of source
@@ -209,7 +190,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             bitmap.Unlock();
         }
 
-        private BitmapSource getColorImage(FrameDescription colorFrameDescription, ColorFrame colorFrame)
+        private unsafe BitmapSource getColorImage(FrameDescription colorFrameDescription, ColorFrame colorFrame)
         {
             byte[] pixels = new byte[colorFrameDescription.Height * colorFrameDescription.Width * 4];
             colorFrame.CopyConvertedFrameDataToArray(pixels, ColorImageFormat.Bgra);
@@ -217,7 +198,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             return BitmapSource.Create(colorFrameDescription.Width, colorFrameDescription.Height, 96, 96, PixelFormats.Bgr32, null, pixels, stride);
         }
 
-        private Bitmap getBitmap(BitmapSource source)
+        private unsafe Bitmap getBitmap(BitmapSource source)
         {
             Bitmap bitmap;
             using (MemoryStream outStream = new MemoryStream())
@@ -231,7 +212,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             return bitmap;
         }
 
-        private void OpenCV(ref Bitmap bitmap)
+        private unsafe void OpenCV(ref Bitmap bitmap)
         {
             Mat testMat = BitmapConverter.ToMat(bitmap);
             MatOfDouble mu = new MatOfDouble();
@@ -251,8 +232,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         {
             ticksNow = DateTime.Now.Ticks;
             fps = ((float)TICKS_PER_SECOND) / (DateTime.Now.Ticks - prevTick); // 1 / ((ticksNow - prevTick) / TICKS_PER_SECOND);
-            //Console.Out.WriteLine("fps: " + fps);
-            Console.Out.WriteLine("fps: " + (int)(fps + 0.5));
+            //Console.Out.WriteLine("fps: " + (int)(FPS + 0.5));
             prevTick = ticksNow;
 
             //calc mean
@@ -285,7 +265,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         /// <summary>
         /// Gets the bitmap to display
         /// </summary>
-        public ImageSource ImageSource
+        public ImageSource ColorImageSource
         {
             get
             {
@@ -293,7 +273,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             }
         }
 
-        public ImageSource ImageSource2
+        public ImageSource DepthImageSource
         {
             get
             {
