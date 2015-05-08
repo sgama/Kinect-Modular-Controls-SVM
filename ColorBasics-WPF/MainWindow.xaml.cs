@@ -66,10 +66,10 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         {
             this.kinectSensor = KinectSensor.GetDefault(); // get the kinectSensor object
 
-            this.depthFrameData = new ushort[depthFrameDescription.Width * depthFrameDescription.Height];
-
             this.colorFrameDescription = this.kinectSensor.ColorFrameSource.CreateFrameDescription(this.colorImageFormat);
             this.depthFrameDescription = this.kinectSensor.DepthFrameSource.FrameDescription;
+
+            this.depthFrameData = new ushort[depthFrameDescription.Width * depthFrameDescription.Height];
 
             this.colorBitmap = new WriteableBitmap(this.colorFrameDescription.Width, this.colorFrameDescription.Height, 96.0, 96.0, PixelFormats.Bgr32, null); // create the bitmap to display  
             this.depthBitmap = new WriteableBitmap(this.depthFrameDescription.Width, this.depthFrameDescription.Height, 96.0, 96.0, PixelFormats.Bgr32, null);
@@ -92,13 +92,13 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                     string myPhotos = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
                     string path = Path.Combine(myPhotos, "KinectScreenshot-Color-test.png");
                     Bitmap bitmap = (Bitmap)Image.FromFile(path, true);
-                    openCV(ref bitmap);
-                    writeToBackBuffer(ConvertBitmap(bitmap));
+                    OpenCV(ref bitmap);
+                    writeToBackBuffer(ConvertBitmap(bitmap), this.colorBitmap);
                     bitmap.Dispose();
                 }
-                catch (System.IO.FileNotFoundException)
+                catch (Exception e)
                 {
-                    MessageBox.Show("There was an error opening the bitmap." +
+                    MessageBox.Show("There was an error opening the test bitmap." +
                         "Please check the path.");
                 }
             }
