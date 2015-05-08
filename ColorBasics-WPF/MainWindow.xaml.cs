@@ -46,6 +46,10 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         /// </summary>
         private string statusText = null;
 
+        private ColorImageFormat colorImageFormat = ColorImageFormat.Bgra;
+        private FrameDescription colorFrameDescription;
+        private FrameDescription depthFrameDescription;
+
         /// <summary>
         /// Initializes a new instance of the MainWindow class.
         /// </summary>
