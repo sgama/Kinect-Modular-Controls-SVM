@@ -65,6 +65,24 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             this.StatusText = this.kinectSensor.IsAvailable ? Properties.Resources.RunningStatusText : Properties.Resources.NoSensorStatusText; // set the status text
             this.DataContext = this; // use the window object as the view model in this simple example
             this.InitializeComponent(); // initialize the components (controls) of the window
+
+            if (!this.kinectSensor.IsAvailable)
+            {
+                try
+                {
+                    string myPhotos = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
+                    string path = Path.Combine(myPhotos, "KinectScreenshot-Color-test.png");
+                    Bitmap bitmap = (Bitmap)Image.FromFile(path, true);
+                    openCV(ref bitmap);
+                    writeToBackBuffer(ConvertBitmap(bitmap));
+                    bitmap.Dispose();
+                }
+                catch (System.IO.FileNotFoundException)
+                {
+                    MessageBox.Show("There was an error opening the bitmap." +
+                        "Please check the path.");
+                }
+            }
         }
 
         /// <summary>
@@ -84,7 +102,6 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                     using (KinectBuffer colorBuffer = colorFrame.LockRawImageBuffer())
                     {
                         this.colorFrameReader.IsPaused = true;
-                        this.colorBitmap.Lock();
 
                         // verify data and write the new color frame data to the display bitmap
                         if ((colorFrameDescription.Width == this.colorBitmap.PixelWidth) && (colorFrameDescription.Height == this.colorBitmap.PixelHeight))
@@ -94,7 +111,6 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                             int stride = colorFrameDescription.Width * 4;
                             BitmapSource source = BitmapSource.Create(colorFrameDescription.Width, colorFrameDescription.Height, 96, 96, PixelFormats.Bgr32, null, pixels, stride);
 
-                            byte[] data;
                             Bitmap bitmap;
                             using (MemoryStream outStream = new MemoryStream())
                             {
@@ -104,37 +120,48 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                                 bitmap = new Bitmap(outStream);
                             }
 
-                            Mat testMat = BitmapConverter.ToMat(bitmap);
-                            MatOfDouble mu = new MatOfDouble();
-                            MatOfDouble sigma = new MatOfDouble();
-                            Cv2.MeanStdDev(testMat, mu, sigma);
-                            double mean = mu.GetArray(0, 0)[0];
-                            mu.Dispose();
-                            sigma.Dispose();
-
-                            Cv2.CvtColor(testMat, testMat, ColorConversion.BgraToGray, 0);
-                            testMat = testMat.GaussianBlur(new OpenCvSharp.CPlusPlus.Size(1, 1), 5, 5, BorderType.Default);
-                            testMat = testMat.Canny(0.5 * mean, 1.2 * mean, 3, true);
-                            int width = source.PixelWidth;
-                            int height = source.PixelHeight;
-                            bitmap = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(testMat);
-                            testMat.Dispose();
-                            source = ConvertBitmap(bitmap);
+                            openCV(ref bitmap);
+                            
+                            writeToBackBuffer(ConvertBitmap(bitmap));
                             bitmap.Dispose();
-                            stride = width * (source.Format.BitsPerPixel / 8); // Calculate stride of source
-                            data = new byte[stride * height]; // Create data array to hold source pixel data
-                            source.CopyPixels(data, stride, 0); // Copy source image pixels to the data array
-
-                            // Write the pixel data to the WriteableBitmap.
-                            this.colorBitmap.WritePixels(new Int32Rect(0, 0, width, height), data, stride, 0);
-                            this.colorBitmap.AddDirtyRect(new Int32Rect(0, 0, width, height));
+                           
+                            
                         }
 
-                        this.colorBitmap.Unlock();
                         this.colorFrameReader.IsPaused = false;
                     }
                 }
             }
+        }
+
+        private void writeToBackBuffer(BitmapSource source)
+        {
+            this.colorBitmap.Lock();
+            int stride = source.PixelWidth * (source.Format.BitsPerPixel / 8); // Calculate stride of source
+            byte[] data = new byte[stride * source.PixelHeight]; // Create data array to hold source pixel data
+            source.CopyPixels(data, stride, 0); // Copy source image pixels to the data array
+
+            // Write the pixel data to the WriteableBitmap.
+            this.colorBitmap.WritePixels(new Int32Rect(0, 0, source.PixelWidth, source.PixelHeight), data, stride, 0);
+            this.colorBitmap.AddDirtyRect(new Int32Rect(0, 0, source.PixelWidth, source.PixelHeight));
+            this.colorBitmap.Unlock();
+        }
+
+        private void openCV(ref Bitmap bitmap)
+        {
+            Mat testMat = BitmapConverter.ToMat(bitmap);
+            MatOfDouble mu = new MatOfDouble();
+            MatOfDouble sigma = new MatOfDouble();
+            Cv2.MeanStdDev(testMat, mu, sigma);
+            double mean = mu.GetArray(0, 0)[0];
+            mu.Dispose();
+            sigma.Dispose();
+
+            Cv2.CvtColor(testMat, testMat, ColorConversion.BgraToGray, 0);
+            testMat = testMat.GaussianBlur(new OpenCvSharp.CPlusPlus.Size(1, 1), 5, 5, BorderType.Default);
+            testMat = testMat.Canny(0.5 * mean, 1.2 * mean, 3, true);
+            bitmap = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(testMat);
+            testMat.Dispose();
         }
 
         public static BitmapSource ConvertBitmap(Bitmap source)
@@ -154,6 +181,8 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             // on failure, set the status text
             this.StatusText = this.kinectSensor.IsAvailable ? Properties.Resources.RunningStatusText
                                                             : Properties.Resources.SensorNotAvailableStatusText;
+
+
         }
 
         /// <summary>
