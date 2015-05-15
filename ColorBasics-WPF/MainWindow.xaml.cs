@@ -149,19 +149,54 @@ namespace Microsoft.Samples.Kinect.ColorBasics
 
         private void openCV(ref Bitmap bitmap)
         {
-            Mat testMat = BitmapConverter.ToMat(bitmap);
+            Debug.WriteLine("Running OpenCV");
+            Mat colorMat = BitmapConverter.ToMat(bitmap);
             MatOfDouble mu = new MatOfDouble();
             MatOfDouble sigma = new MatOfDouble();
-            Cv2.MeanStdDev(testMat, mu, sigma);
+            Cv2.MeanStdDev(colorMat, mu, sigma);
             double mean = mu.GetArray(0, 0)[0];
             mu.Dispose();
             sigma.Dispose();
 
-            Cv2.CvtColor(testMat, testMat, ColorConversion.BgraToGray, 0);
-            testMat = testMat.GaussianBlur(new OpenCvSharp.CPlusPlus.Size(1, 1), 5, 5, BorderType.Default);
-            testMat = testMat.Canny(0.5 * mean, 1.2 * mean, 3, true);
-            bitmap = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(testMat);
-            testMat.Dispose();
+            Mat greyMat = new Mat();
+            Cv2.CvtColor(colorMat, greyMat, ColorConversion.BgraToGray, 0);
+            greyMat = greyMat.GaussianBlur(new OpenCvSharp.CPlusPlus.Size(1, 1), 5, 5, BorderType.Default);
+            greyMat = greyMat.Canny(0.5 * mean, 1.2 * mean, 3, true);
+            Mat contourMat = new Mat(greyMat.Size(), colorMat.Type());
+            var contours = greyMat.FindContoursAsArray(ContourRetrieval.List, ContourChain.ApproxSimple);
+            
+            for (int j =0; j< contours.Length; j++)
+            {
+                var poly = Cv2.ApproxPolyDP(contours[j], 0.01 * Cv2.ArcLength(contours[j], true), true);
+                int num = poly.Length;
+
+
+                var color = Scalar.White;
+                if (num == 4)
+                {
+                    color = Scalar.Blue;
+                }
+                if (num > 12)
+                {
+                    color = Scalar.Red;
+                }
+                if (num > 1 && num < 4)
+                {
+                    color = Scalar.Green;
+                }
+                for ( int i = 0; i<poly.Length-1; i++)
+                {
+                    Cv2.Line(colorMat, poly[i], poly[i + 1], color, 2);
+                }
+                Cv2.Line(colorMat, poly[0], poly[poly.Length - 1], color, 2);     
+
+            }
+            
+
+            bitmap = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(colorMat);
+            colorMat.Dispose();
+            greyMat.Dispose();
+            contourMat.Dispose();
         }
 
         public static BitmapSource ConvertBitmap(Bitmap source)
