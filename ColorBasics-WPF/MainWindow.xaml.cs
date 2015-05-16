@@ -36,6 +36,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
 
         //BodyMask Frames
         private DepthSpacePoint[] colorMappedToDepthPoints = null;
+        private ColorSpacePoint[] depthMappedToColorPoints = null;
 
         /// <summary>
         /// Bitmap to display
@@ -166,6 +167,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                 // Access the depth frame data directly via LockImageBuffer to avoid making a copy
                 using (KinectBuffer depthFrameData = depthFrame.LockImageBuffer())
                 {
+                    //this.coordinateMapper.MapDepthFrameToColorSpaceUsingIntPtr(depthFrameData.UnderlyingBuffer, depthFrameData.Size, this.depthMappedToColorPoints);
                     this.coordinateMapper.MapColorFrameToDepthSpaceUsingIntPtr(depthFrameData.UnderlyingBuffer,depthFrameData.Size,this.colorMappedToDepthPoints);
                     ushort maxDepth = ushort.MaxValue;
                     this.ProcessDepthFrameData(depthFrameData.UnderlyingBuffer, depthFrameData.Size, depthFrame.DepthMinReliableDistance, maxDepth);
@@ -379,10 +381,10 @@ namespace Microsoft.Samples.Kinect.ColorBasics
 
         private unsafe void checkRectangle(ref Mat testMat)
         {
-            int xCoord = 1020;
+            int xCoord = 720;
             int yCoord = 620;
             int xSize = 250;
-            int ySize = 250;
+            int ySize = 350;
             RotatedRect rRect = new RotatedRect(new Point2f(xCoord, yCoord), new Size2f(xSize, ySize), 0);
             Point2f[] vertices = rRect.Points();
             for (int i = 0; i < 4; i++)
@@ -394,43 +396,62 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             double green = 0;
             double red = 0;
             int depth = 0;
-            //Console.Out.WriteLine("R: " +color.Item2.ToString() + " G: " + color.Item1.ToString() + " B: " + color.Item0.ToString());
-            for (int i = 0; i < xSize; i++)
+            int depthWidth = depthFrameDescription.Width;
+            int depthHeight = depthFrameDescription.Height;
+            //Console.Out.WriteLine("DepthLength: " + this.colorMappedToDepthPoints.Length.ToString());
+            fixed (DepthSpacePoint* colorMappedToDepthPointsPointer = this.colorMappedToDepthPoints)
             {
-                for (int j = 0; j < ySize; j++)
-                {
-                    fixed (DepthSpacePoint* colorMappedToDepthPointsPointer = this.colorMappedToDepthPoints)
+                // Treat the color data as 4-byte pixels
+                int colorMappedToDepthPointCount = this.colorMappedToDepthPoints.Length;
+                // Loop over each row and column of the color image. Zero out any pixels that don't correspond to a body index
+                //for (int colorIndex = 0; colorIndex < colorMappedToDepthPointCount; ++colorIndex)
+                //{
+                    for (int i = 0; i < xSize; i++)
                     {
-                        float colorMappedToDepthX = colorMappedToDepthPointsPointer[yCoord + j - (ySize / 2)].X;
-                        float colorMappedToDepthY = colorMappedToDepthPointsPointer[xCoord + i - (xSize / 2)].Y;
+                        for (int j = 0; j < ySize; j++)
+                        {
+                            int colorIndex = i + (j * depthWidth);
+                            float colorMappedToDepthX = colorMappedToDepthPointsPointer[colorIndex].X;
+                            float colorMappedToDepthY = colorMappedToDepthPointsPointer[colorIndex].Y;
+                            int k = colorIndex % 1920;
+                            int l = colorIndex / 1920;
+                            // The sentinel value is -inf, -inf, meaning that no depth pixel corresponds to this color pixel.
+                            if (!float.IsNegativeInfinity(colorMappedToDepthX) &&
+                                !float.IsNegativeInfinity(colorMappedToDepthY))
+                            {
+                                // Make sure the depth pixel maps to a valid point in color space
+                                int depthX = (int)(colorMappedToDepthX + 0.5f);
+                                int depthY = (int)(colorMappedToDepthY + 0.5f);
 
-                        // The sentinel value is -inf, -inf, meaning that no depth pixel corresponds to this color pixel.
-                        if (!float.IsNegativeInfinity(colorMappedToDepthX) && !float.IsNegativeInfinity(colorMappedToDepthY)) {
-                            // Make sure the depth pixel maps to a valid point in color space
-                            int depthX = (int)(colorMappedToDepthX + 0.5f);
-                            int depthY = (int)(colorMappedToDepthY + 0.5f);
-
-                            // If the point is not valid, there is no body index there.
-                            if ((depthX >= 0) && (depthX < 512) && (depthY >= 0) && (depthY < 424)) {
-                                int depthIndex = (depthY * 512) + depthX;
-
-                                depth += depthIndex / (xSize * ySize);
+                                // If the point is not valid, there is no body index there.
+                                if ((depthX >= 0) && (depthX < depthWidth) && (depthY >= 0) && (depthY < depthHeight))
+                                {
+                                    int depthIndex = (depthY * depthWidth) + depthX;
+                                    depth += this.depthPixels[depthIndex];
+                                    testMat.Set<Vec3b>(l, k, new Vec3b(0, 0, 255));
+                                    //testMat.Set<Vec3b>(xCoord + i - (xSize / 2), yCoord + j - (ySize / 2), new Vec3b(0, 0, 255));
+                                }
                             }
+                           
+                            color = testMat.At<Vec3b>(yCoord + j - (ySize / 2), xCoord + i - (xSize / 2));
+                            
+                            //testMat.Set<Vec3b>(yCoord + i, xCoord + j, new Vec3b(0, 0, 255));
+                            blue += Double.Parse(color.Item0.ToString()) / (xSize * ySize);
+                            green += Double.Parse(color.Item1.ToString()) / (xSize * ySize);
+                            red += Double.Parse(color.Item2.ToString()) / (xSize * ySize);
+
                         }
-
                     }
-
-
-
-
-                    color = testMat.At<Vec3b>(yCoord + j - (ySize / 2), xCoord + i - (xSize / 2));
-                    //testMat.Set<Vec3b>(yCoord + j - (ySize/2), xCoord + i - (xSize/2), new Vec3b(0, 0, 255));
-                    blue += Double.Parse(color.Item0.ToString()) / (xSize * ySize);
-                    green += Double.Parse(color.Item1.ToString()) / (xSize * ySize);
-                    red += Double.Parse(color.Item2.ToString()) / (xSize * ySize);
-                }
+                    //bitmapPixelsPointer[colorIndex] = 0;
+               // }
+                    Console.Out.WriteLine("THISISX: " + colorMappedToDepthPointsPointer[1000].X);
             }
-            Console.Out.WriteLine("Depth: " + depth.ToString());
+
+            if (depth != 0)
+            {
+                Console.Out.WriteLine("Depth: " + depth.ToString());
+            }
+            
             //Console.Out.WriteLine("R: " + red.ToString().Substring(0, 4) + " G: " + green.ToString().Substring(0, 4) + " B: " + blue.ToString().Substring(0, 4));
             if (red > 180 && green < 80 && blue < 80)
             {
