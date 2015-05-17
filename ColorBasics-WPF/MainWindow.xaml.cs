@@ -162,6 +162,16 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             Cv2.CvtColor(colorMat, greyMat, ColorConversion.BgraToGray, 0);
             greyMat = greyMat.GaussianBlur(new OpenCvSharp.CPlusPlus.Size(1, 1), 5, 5, BorderType.Default);
             greyMat = greyMat.Canny(0.5 * mean, 1.2 * mean, 3, true);
+
+            var hog = new HOGDescriptor();
+            hog.SetSVMDetector(HOGDescriptor.GetDefaultPeopleDetector());
+
+            bool b = hog.CheckDetectorSize();
+            Debug.WriteLine("CheckDetectorSize: {0}", b);
+
+            var found = hog.DetectMultiScale(greyMat, 0, new OpenCvSharp.CPlusPlus.Size(8, 8), new OpenCvSharp.CPlusPlus.Size(24, 16), 1.05, 2);
+            Debug.WriteLine("{0} region(s) found", found.Length);
+
             Mat contourMat = new Mat(greyMat.Size(), colorMat.Type());
             var contours = greyMat.FindContoursAsArray(ContourRetrieval.List, ContourChain.ApproxSimple);
             
@@ -184,12 +194,10 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                 {
                     color = Scalar.Green;
                 }
-                for ( int i = 0; i<poly.Length-1; i++)
-                {
-                    Cv2.Line(colorMat, poly[i], poly[i + 1], color, 2);
-                }
-                Cv2.Line(colorMat, poly[0], poly[poly.Length - 1], color, 2);     
-
+                var rect = Cv2.BoundingRect(poly);
+                if (rect.Height < 20 || rect.Width < 20) continue;
+                rect.Inflate((int)(rect.Width*0.1), (int)(rect.Height*0.1));
+                Cv2.Rectangle(colorMat, rect, color, 2);
             }
             
 
