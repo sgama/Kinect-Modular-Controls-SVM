@@ -34,7 +34,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
 
         private CoordinateMapper coordinateMapper = null;
 
-        //BodyMask Frames
+        //Mapping Points
         private ColorSpacePoint[] depthMappedToColorPoints = null;
 
         /// <summary>
@@ -64,8 +64,6 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         private double sumFps = 0;
         private int counter = 0;
 
-        
-
         /// <summary>
         /// The size in bytes of the bitmap back buffer
         /// </summary>
@@ -89,7 +87,6 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             this.depthMappedToColorPoints = new ColorSpacePoint[this.depthFrameDescription.LengthInPixels];
 
             // ??????
-            //this.depthFrameData = new ushort[this.depthFrameDescription.Width * this.depthFrameDescription.Height];
             this.depthPixels = new byte[this.depthFrameDescription.Width * this.depthFrameDescription.Height];
 
             this.colorBitmap = new WriteableBitmap(this.colorFrameDescription.Width, this.colorFrameDescription.Height, 96.0, 96.0, PixelFormats.Bgr32, null); // create the bitmap to display  
@@ -185,7 +182,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                 writeToBackBuffer(ConvertBitmap(colorBitmap), this.colorBitmap);
                 colorBitmap.Dispose();
 
-                MapColortoDepth(colorFrame);
+                MapColortoDepth(colorFrame, 400, 0, 1000, 1000); // Remember this modifies the colorBitmap in currentState
                 
                 // We're done with the ColorFrame 
                 colorFrame.Dispose();
@@ -295,7 +292,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         }
 
         //TODO: Request certain pixels
-        private void MapColortoDepth(ColorFrame colorFrame)
+        private void MapColortoDepth(ColorFrame colorFrame, int startX, int startY, int widthX, int heightY)
         {
             int colorWidth = 1920;
             int colorHeight = 1080;
@@ -303,9 +300,9 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             byte[] colorFrameData = new byte[this.colorFrameDescription.Width * this.colorFrameDescription.Height * 4];
             colorFrame.CopyConvertedFrameDataToArray(colorFrameData, ColorImageFormat.Bgra);
 
-            for (int colorIndex = 0; colorIndex < this.depthMappedToColorPoints.Length - 4; ++colorIndex)
+            for (int colorIndex = 0; colorIndex < this.depthMappedToColorPoints.Length - 4; colorIndex++)
             {
-                ushort depth = this.depthPixels[colorIndex]; ;
+                ushort depth = this.depthPixels[colorIndex];
                 ColorSpacePoint point = this.depthMappedToColorPoints[colorIndex];
 
                 // round down to the nearest pixel
@@ -316,10 +313,15 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                 if ((colorX >= 0 && (colorX < colorWidth) && (colorY >= 0) && (colorY < colorHeight)))
                 {
                     int colorImageIndex = ((colorWidth * colorY) + colorX) * 4;
-                    colorFrameData[colorImageIndex] = (byte)depth;
-                    colorFrameData[colorImageIndex + 1] = (byte)depth;
-                    colorFrameData[colorImageIndex + 2] = (byte)depth;
-                    colorImageIndex++; //Skip Alpha for BGR32 
+
+                    // Check if pixels are within the range of the bounding box
+                    if (colorX >= startX && colorX <= startX + widthX && colorY >= startY && colorY <= startY + heightY)
+                    {
+                        colorFrameData[colorImageIndex] = (byte)depth;
+                        colorFrameData[colorImageIndex + 1] = (byte)depth;
+                        colorFrameData[colorImageIndex + 2] = (byte)depth;
+                        //colorImageIndex++; //Skip Alpha for BGR32 
+                    } 
                 }
             }
 
