@@ -182,7 +182,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                 writeToBackBuffer(ConvertBitmap(colorBitmap), this.colorBitmap);
                 colorBitmap.Dispose();
 
-                MapColortoDepth(colorFrame, 400, 0, 1000, 1000); // Remember this modifies the colorBitmap in currentState
+                MapColortoDepth(colorFrame, 1000, 200, 500, 500); // Remember this modifies the colorBitmap in currentState
                 
                 // We're done with the ColorFrame 
                 colorFrame.Dispose();
@@ -215,7 +215,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
 
             checkRectangle(ref testMat);
 
-            // Cv2.CvtColor(testMat, testMat, ColorConversion.BgraToGray, 0);
+            //Cv2.CvtColor(testMat, testMat, ColorConversion.BgraToGray, 0);
             //testMat = testMat.GaussianBlur(new OpenCvSharp.CPlusPlus.Size(1, 1), 5, 5, BorderType.Default);
             //testMat = testMat.Canny(0.5 * mean, 1.2 * mean, 3, true);
 
@@ -231,37 +231,16 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             int ySize = 350;
             RotatedRect rRect = new RotatedRect(new Point2f(xCoord, yCoord), new Size2f(xSize, ySize), 0);
             Point2f[] vertices = rRect.Points();
+
             for (int i = 0; i < 4; i++)
             {
                 Cv2.Line(testMat, vertices[i], vertices[(i + 1) % 4], new Scalar(0, 0, 255));
             }
+
             Vec3b color;
             double blue = 0;
             double green = 0;
             double red = 0;
-
-            /**
-            for (int colorIndex = 0; colorIndex < this.depthMappedToColorPoints.Length - 4; ++colorIndex)
-            {
-                ushort depth = this.depthPixels[colorIndex]; ;
-                ColorSpacePoint point = this.depthMappedToColorPoints[colorIndex];
-
-                // round down to the nearest pixel
-                int colorX = (int)Math.Floor(point.X + 0.5);
-                int colorY = (int)Math.Floor(point.Y + 0.5);
-
-                int colorWidth = 1920;
-                int colorHeight = 1080;
-                // make sure the pixel is part of the image
-                if ((colorX >= 0 && (colorX < colorWidth) && (colorY >= 0) && (colorY < colorHeight)))
-                {
-                    int colorImageIndex = ((colorWidth * colorY) + colorX) * 4;
-                    int k = colorIndex % xSize;
-                    int l = colorIndex / xSize;
-                    testMat.Set<Vec3b>(k, l, new Vec3b(0, 0, 255));
-                    
-                }
-            } **/
 
             for (int i = 0; i < xSize; i++)
             {
@@ -296,9 +275,12 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         {
             int colorWidth = 1920;
             int colorHeight = 1080;
+            double depthCount = 0;
 
+            // Could copy only the pixels we need with this.colorBitmap.Pixels(...)
             byte[] colorFrameData = new byte[this.colorFrameDescription.Width * this.colorFrameDescription.Height * 4];
-            colorFrame.CopyConvertedFrameDataToArray(colorFrameData, ColorImageFormat.Bgra);
+            //colorFrame.CopyConvertedFrameDataToArray(colorFrameData, ColorImageFormat.Bgra);
+            this.colorBitmap.CopyPixels(colorFrameData, this.colorBitmap.BackBufferStride, 0);
 
             for (int colorIndex = 0; colorIndex < this.depthMappedToColorPoints.Length - 4; colorIndex++)
             {
@@ -317,12 +299,17 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                     // Check if pixels are within the range of the bounding box
                     if (colorX >= startX && colorX <= startX + widthX && colorY >= startY && colorY <= startY + heightY)
                     {
+                        depthCount += Convert.ToDouble(depth) / (widthX * heightY);
                         colorFrameData[colorImageIndex] = (byte)depth;
                         colorFrameData[colorImageIndex + 1] = (byte)depth;
                         colorFrameData[colorImageIndex + 2] = (byte)depth;
                         //colorImageIndex++; //Skip Alpha for BGR32 
                     } 
                 }
+            }
+            if (depthCount != 0)
+            {
+                Console.Out.WriteLine("Depth: " + depthCount.ToString());
             }
 
             this.colorBitmap.Lock();
