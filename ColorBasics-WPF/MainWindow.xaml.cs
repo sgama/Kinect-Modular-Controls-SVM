@@ -46,6 +46,8 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         /// </summary>
         private string statusText = null;
 
+        private Boolean screenshotAction = false;
+
         /// <summary>
         /// Initializes a new instance of the MainWindow class.
         /// </summary>
@@ -73,7 +75,8 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                     string myPhotos = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
                     string path = Path.Combine(myPhotos, "KinectScreenshot-Color-test.png");
                     Bitmap bitmap = (Bitmap)Image.FromFile(path, true);
-                    openCV(ref bitmap);
+                    detectShapeCandidates(ref bitmap, screenshotAction);
+                    screenshotAction = false;
                     writeToBackBuffer(ConvertBitmap(bitmap));
                     bitmap.Dispose();
                 }
@@ -120,8 +123,9 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                                 bitmap = new Bitmap(outStream);
                             }
 
-                            openCV(ref bitmap);
-                            
+                            detectShapeCandidates(ref bitmap, screenshotAction);
+                            screenshotAction = false;
+
                             writeToBackBuffer(ConvertBitmap(bitmap));
                             bitmap.Dispose();
                            
@@ -147,9 +151,10 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             this.colorBitmap.Unlock();
         }
 
-        private void openCV(ref Bitmap bitmap)
+        private void detectShapeCandidates(ref Bitmap bitmap, Boolean saveShapes)
         {
             Debug.WriteLine("Running OpenCV");
+            string myPhotos = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
             Mat colorMat = BitmapConverter.ToMat(bitmap);
             MatOfDouble mu = new MatOfDouble();
             MatOfDouble sigma = new MatOfDouble();
@@ -163,41 +168,39 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             greyMat = greyMat.GaussianBlur(new OpenCvSharp.CPlusPlus.Size(1, 1), 5, 5, BorderType.Default);
             greyMat = greyMat.Canny(0.5 * mean, 1.2 * mean, 3, true);
 
-            var hog = new HOGDescriptor();
-            hog.SetSVMDetector(HOGDescriptor.GetDefaultPeopleDetector());
-
-            bool b = hog.CheckDetectorSize();
-            Debug.WriteLine("CheckDetectorSize: {0}", b);
-
-            var found = hog.DetectMultiScale(greyMat, 0, new OpenCvSharp.CPlusPlus.Size(8, 8), new OpenCvSharp.CPlusPlus.Size(24, 16), 1.05, 2);
-            Debug.WriteLine("{0} region(s) found", found.Length);
-
             Mat contourMat = new Mat(greyMat.Size(), colorMat.Type());
-            var contours = greyMat.FindContoursAsArray(ContourRetrieval.List, ContourChain.ApproxSimple);
+            greyMat.CopyTo(contourMat);
+            var contours = contourMat.FindContoursAsArray(ContourRetrieval.List, ContourChain.ApproxSimple);
             
             for (int j =0; j< contours.Length; j++)
             {
                 var poly = Cv2.ApproxPolyDP(contours[j], 0.01 * Cv2.ArcLength(contours[j], true), true);
                 int num = poly.Length;
-
-
-                var color = Scalar.White;
-                if (num == 4)
+     
+                if (num >= 4 && num < 20)
                 {
-                    color = Scalar.Blue;
+                    var color = Scalar.Blue;
+                    var rect = Cv2.BoundingRect(poly);
+                    
+                    if (rect.Height < 20 || rect.Width < 20) continue;
+                    if (saveShapes)
+                    {
+                        string path = Path.Combine(myPhotos, "shape_samples");
+                        path = Path.Combine(path, "shape_sample_" + j + ".png");
+                        var matRect = new OpenCvSharp.CPlusPlus.Rect(0, 0, greyMat.Width, greyMat.Height);
+                        rect.Inflate((int)(rect.Width * 0.1), (int)(rect.Height * 0.1));
+                        rect = rect.Intersect(matRect);
+                        Mat shapeMat = greyMat.SubMat(rect);
+                        var size = new OpenCvSharp.CPlusPlus.Size(128, 128);
+                        shapeMat = shapeMat.Resize(size);
+                        Bitmap shape = shapeMat.ToBitmap();
+                        shape.Save(path);
+                        shape.Dispose();
+                        shapeMat.Dispose();
+                        continue;
+                    }
+                    Cv2.Rectangle(colorMat, rect, color, 2);
                 }
-                if (num > 12)
-                {
-                    color = Scalar.Red;
-                }
-                if (num > 1 && num < 4)
-                {
-                    color = Scalar.Green;
-                }
-                var rect = Cv2.BoundingRect(poly);
-                if (rect.Height < 20 || rect.Width < 20) continue;
-                rect.Inflate((int)(rect.Width*0.1), (int)(rect.Height*0.1));
-                Cv2.Rectangle(colorMat, rect, color, 2);
             }
             
 
@@ -205,6 +208,11 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             colorMat.Dispose();
             greyMat.Dispose();
             contourMat.Dispose();
+        }
+
+        private void trainSVM()
+        {
+            //read from folder
         }
 
         public static BitmapSource ConvertBitmap(Bitmap source)
@@ -319,6 +327,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                 {
                     this.StatusText = string.Format(Properties.Resources.FailedScreenshotStatusTextFormat, path);
                 }
+                screenshotAction = true;
             }
         }
     }
