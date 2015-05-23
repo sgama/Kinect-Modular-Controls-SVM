@@ -69,6 +69,12 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         /// </summary>
         private uint bitmapBackBufferSize = 0;
 
+        private Boolean isCalibrated = false;
+        private KeyPoint[] keyCirclePoints = null;
+        private KeyPoint[] keySquarePoints = null;
+        Point2f[] squareVerticies = null;
+        Point2f[] circleVerticies = null;
+
         /// <summary>
         /// Initializes a new instance of the MainWindow class.
         /// </summary>
@@ -173,6 +179,8 @@ namespace Microsoft.Samples.Kinect.ColorBasics
 
                 // Process Color
                 colorFrame.CopyConvertedFrameDataToIntPtr(this.colorBitmap.BackBuffer, this.bitmapBackBufferSize, ColorImageFormat.Bgra);
+                // Could copy only the pixels we need with this.colorBitmap.Pixels(...)
+                byte[] colorFrameData = new byte[this.colorFrameDescription.Width * this.colorFrameDescription.Height * 4];
                 
                 BitmapSource colorSource = getColorImage(colorFrameDescription, colorFrame);
                 Bitmap colorBitmap = getBitmap(colorSource);
@@ -182,8 +190,27 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                 writeToBackBuffer(ConvertBitmap(colorBitmap), this.colorBitmap);
                 colorBitmap.Dispose();
 
-                MapColortoDepth(colorFrame, 1000, 200, 500, 500); // Remember this modifies the colorBitmap in currentState
-                
+                if (circleVerticies != null)
+                {
+                    int height = (int)(circleVerticies[0].Y - circleVerticies[1].Y);
+                    int width = (int)(circleVerticies[2].X - circleVerticies[1].X);
+                    int startX = (int)(circleVerticies[0].X);
+                    int startY = (int)(circleVerticies[1].Y);
+                    MapColortoDepth(colorFrame, ref colorFrameData, startX, startY, width, height);
+                }
+
+                if (squareVerticies != null)
+                {
+                    int height = (int)(squareVerticies[0].Y - squareVerticies[1].Y);
+                    int width = (int)(squareVerticies[2].X - squareVerticies[1].X);
+                    int startX = (int)(squareVerticies[0].X);
+                    int startY = (int)(squareVerticies[1].Y);
+                    MapColortoDepth(colorFrame, ref colorFrameData, startX, startY, width, height);
+                }
+
+                this.colorBitmap.Lock();
+                this.colorBitmap.WritePixels(new Int32Rect(0, 0, this.colorFrameDescription.Width, this.colorFrameDescription.Height), colorFrameData, this.colorFrameDescription.Width * 4, 0);
+                this.colorBitmap.Unlock();
                 // We're done with the ColorFrame 
                 colorFrame.Dispose();
                 colorFrame = null;
@@ -213,7 +240,64 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             mu.Dispose();
             sigma.Dispose();
 
-            checkRectangle(ref testMat);
+            if (isCalibrated == false)
+            {
+                SimpleBlobDetector.Params squareParameters = new SimpleBlobDetector.Params();
+                SimpleBlobDetector.Params circleParameters = new SimpleBlobDetector.Params();
+
+                squareParameters.FilterByCircularity = true;
+                squareParameters.MinCircularity = (float)0.75;
+                squareParameters.MaxCircularity = (float)0.8;
+                squareParameters.FilterByArea = true;
+                squareParameters.MaxArea = 500;
+
+                circleParameters.FilterByCircularity = true;
+                circleParameters.MinCircularity = (float)0.90;
+                circleParameters.MaxCircularity = (float)1;
+                circleParameters.FilterByArea = true;
+                circleParameters.MaxArea = 500;
+
+                SimpleBlobDetector detectSquareBlobs = new SimpleBlobDetector(squareParameters);
+                keySquarePoints = detectSquareBlobs.Detect(testMat);
+                detectSquareBlobs.Dispose();
+
+                SimpleBlobDetector detectCircleBlobs = new SimpleBlobDetector(circleParameters);
+                keyCirclePoints = detectCircleBlobs.Detect(testMat);
+                detectCircleBlobs.Dispose();
+            }
+
+            if (keyCirclePoints != null || keySquarePoints != null)
+            {
+                for (int i = 0; i < keySquarePoints.Length; i++)
+                {
+                    OpenCvSharp.CPlusPlus.Point coordinate = keySquarePoints[i].Pt;
+                    testMat.Set<Vec3b>(coordinate.Y, coordinate.X, new Vec3b(255, 0, 0));
+                    RotatedRect rRect = new RotatedRect(new Point2f(coordinate.X, coordinate.Y), new Size2f(50, 50), 0);
+                    squareVerticies = rRect.Points();
+
+                    for (int j = 0; j < 4; j++)
+                    {
+                        Cv2.Line(testMat, squareVerticies[j], squareVerticies[(j + 1) % 4], new Scalar(255, 0, 0));
+                    }
+                    //Console.Out.WriteLine("X: " + coordinate.X + " Y: " + coordinate.Y);
+                }
+
+                for (int i = 0; i < keyCirclePoints.Length; i++)
+                {
+                    OpenCvSharp.CPlusPlus.Point coordinate = keyCirclePoints[i].Pt;
+                    testMat.Set<Vec3b>(coordinate.Y, coordinate.X, new Vec3b(0, 255, 0));
+                    RotatedRect rRect = new RotatedRect(new Point2f(coordinate.X, coordinate.Y), new Size2f(50, 50), 0);
+                    circleVerticies = rRect.Points();
+
+                    for (int j = 0; j < 4; j++)
+                    {
+                        Cv2.Line(testMat, circleVerticies[j], circleVerticies[(j + 1) % 4], new Scalar(0, 255, 0));
+                    }
+                    //Console.Out.WriteLine("X: " + coordinate.X + " Y: " + coordinate.Y);
+                }
+            }
+
+            //checkRectangle(ref testMat);
 
             //Cv2.CvtColor(testMat, testMat, ColorConversion.BgraToGray, 0);
             //testMat = testMat.GaussianBlur(new OpenCvSharp.CPlusPlus.Size(1, 1), 5, 5, BorderType.Default);
@@ -225,6 +309,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
 
         private unsafe void checkRectangle(ref Mat testMat)
         {
+            
             int xCoord = 440;
             int yCoord = 440;
             int xSize = 250;
@@ -241,6 +326,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             double blue = 0;
             double green = 0;
             double red = 0;
+            
 
             for (int i = 0; i < xSize; i++)
             {
@@ -271,14 +357,12 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         }
 
         //TODO: Request certain pixels
-        private void MapColortoDepth(ColorFrame colorFrame, int startX, int startY, int widthX, int heightY)
+        private void MapColortoDepth(ColorFrame colorFrame, ref byte[] colorFrameData, int startX, int startY, int widthX, int heightY)
         {
             int colorWidth = 1920;
             int colorHeight = 1080;
             double depthCount = 0;
 
-            // Could copy only the pixels we need with this.colorBitmap.Pixels(...)
-            byte[] colorFrameData = new byte[this.colorFrameDescription.Width * this.colorFrameDescription.Height * 4];
             //colorFrame.CopyConvertedFrameDataToArray(colorFrameData, ColorImageFormat.Bgra);
             this.colorBitmap.CopyPixels(colorFrameData, this.colorBitmap.BackBufferStride, 0);
 
@@ -312,9 +396,6 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                 Console.Out.WriteLine("Depth: " + depthCount.ToString());
             }
 
-            this.colorBitmap.Lock();
-            this.colorBitmap.WritePixels(new Int32Rect(0, 0, this.colorFrameDescription.Width, this.colorFrameDescription.Height), colorFrameData, this.colorFrameDescription.Width * 4, 0);
-            this.colorBitmap.Unlock();
         }
 
         private void RenderDepthPixels()
@@ -563,5 +644,18 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                 }
             }
         }
+
+
+        /// <summary>
+        /// Handles the user clicking on the screenshot button
+        /// </summary>
+        /// <param name="sender">object sending the event</param>
+        /// <param name="e">event arguments</param>
+        private void CalibrateButton_Click(object sender, RoutedEventArgs e)
+        {
+            isCalibrated = !isCalibrated;
+            Console.Out.WriteLine("isCalibrated is now: " + isCalibrated.ToString());
+        }
+
     }
 }
