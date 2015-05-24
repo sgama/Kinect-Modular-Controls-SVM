@@ -53,6 +53,8 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         private FrameDescription depthFrameDescription;
         private MultiSourceFrameReader multiSourceFrameReader;
 
+        private byte[] colorFrameData;
+
         //Depth Frame
         private byte[] depthPixels = null;
         private const int MapDepthToByte = 8000 / 256;
@@ -72,8 +74,6 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         private Boolean isCalibrated = false;
         private KeyPoint[] keyCirclePoints = null;
         private KeyPoint[] keySquarePoints = null;
-        Point2f[] squareVerticies = null;
-        Point2f[] circleVerticies = null;
 
         /// <summary>
         /// Initializes a new instance of the MainWindow class.
@@ -91,6 +91,9 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             this.colorFrameDescription = this.kinectSensor.ColorFrameSource.FrameDescription;
 
             this.depthMappedToColorPoints = new ColorSpacePoint[this.depthFrameDescription.LengthInPixels];
+
+            // Could copy only the pixels we need with this.colorBitmap.Pixels(...)
+            this.colorFrameData = new byte[this.colorFrameDescription.Width * this.colorFrameDescription.Height * 4];
 
             // ??????
             this.depthPixels = new byte[this.depthFrameDescription.Width * this.depthFrameDescription.Height];
@@ -178,9 +181,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                 depthFrame = null;
 
                 // Process Color
-                colorFrame.CopyConvertedFrameDataToIntPtr(this.colorBitmap.BackBuffer, this.bitmapBackBufferSize, ColorImageFormat.Bgra);
-                // Could copy only the pixels we need with this.colorBitmap.Pixels(...)
-                byte[] colorFrameData = new byte[this.colorFrameDescription.Width * this.colorFrameDescription.Height * 4];
+                //colorFrame.CopyConvertedFrameDataToIntPtr(this.colorBitmap.BackBuffer, this.bitmapBackBufferSize, ColorImageFormat.Bgra);  
                 
                 BitmapSource colorSource = getColorImage(colorFrameDescription, colorFrame);
                 Bitmap colorBitmap = getBitmap(colorSource);
@@ -190,28 +191,19 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                 writeToBackBuffer(ConvertBitmap(colorBitmap), this.colorBitmap);
                 colorBitmap.Dispose();
 
-                if (circleVerticies != null)
-                {
-                    int height = (int)(circleVerticies[0].Y - circleVerticies[1].Y);
-                    int width = (int)(circleVerticies[2].X - circleVerticies[1].X);
-                    int startX = (int)(circleVerticies[0].X);
-                    int startY = (int)(circleVerticies[1].Y);
-                    MapColortoDepth(colorFrame, ref colorFrameData, startX, startY, width, height);
-                }
+                // Call below is more efficient
+                //colorFrame.CopyConvertedFrameDataToArray(this.colorFrameData, ColorImageFormat.Bgra);
 
-                if (squareVerticies != null)
-                {
-                    int height = (int)(squareVerticies[0].Y - squareVerticies[1].Y);
-                    int width = (int)(squareVerticies[2].X - squareVerticies[1].X);
-                    int startX = (int)(squareVerticies[0].X);
-                    int startY = (int)(squareVerticies[1].Y);
-                    MapColortoDepth(colorFrame, ref colorFrameData, startX, startY, width, height);
-                }
+                // But we use this instead so we can use the mat, without it bounding boxes are not shown.
+                this.colorBitmap.CopyPixels(this.colorFrameData, this.colorBitmap.BackBufferStride, 0);
+
+                checkKeyPoints();
 
                 this.colorBitmap.Lock();
-                this.colorBitmap.WritePixels(new Int32Rect(0, 0, this.colorFrameDescription.Width, this.colorFrameDescription.Height), colorFrameData, this.colorFrameDescription.Width * 4, 0);
+                this.colorBitmap.WritePixels(new Int32Rect(0, 0, this.colorFrameDescription.Width, this.colorFrameDescription.Height), this.colorFrameData, this.colorFrameDescription.Width * 4, 0);
                 this.colorBitmap.Unlock();
                 // We're done with the ColorFrame 
+                Array.Clear(this.colorFrameData, 0, this.colorFrameData.Length);
                 colorFrame.Dispose();
                 colorFrame = null;
             }
@@ -273,13 +265,12 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                     OpenCvSharp.CPlusPlus.Point coordinate = keySquarePoints[i].Pt;
                     testMat.Set<Vec3b>(coordinate.Y, coordinate.X, new Vec3b(255, 0, 0));
                     RotatedRect rRect = new RotatedRect(new Point2f(coordinate.X, coordinate.Y), new Size2f(50, 50), 0);
-                    squareVerticies = rRect.Points();
+                    Point2f[] squareVerticies = rRect.Points();
 
                     for (int j = 0; j < 4; j++)
                     {
                         Cv2.Line(testMat, squareVerticies[j], squareVerticies[(j + 1) % 4], new Scalar(255, 0, 0));
                     }
-                    //Console.Out.WriteLine("X: " + coordinate.X + " Y: " + coordinate.Y);
                 }
 
                 for (int i = 0; i < keyCirclePoints.Length; i++)
@@ -287,13 +278,12 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                     OpenCvSharp.CPlusPlus.Point coordinate = keyCirclePoints[i].Pt;
                     testMat.Set<Vec3b>(coordinate.Y, coordinate.X, new Vec3b(0, 255, 0));
                     RotatedRect rRect = new RotatedRect(new Point2f(coordinate.X, coordinate.Y), new Size2f(50, 50), 0);
-                    circleVerticies = rRect.Points();
+                    Point2f[] circleVerticies = rRect.Points();
 
                     for (int j = 0; j < 4; j++)
                     {
                         Cv2.Line(testMat, circleVerticies[j], circleVerticies[(j + 1) % 4], new Scalar(0, 255, 0));
                     }
-                    //Console.Out.WriteLine("X: " + coordinate.X + " Y: " + coordinate.Y);
                 }
             }
 
@@ -309,7 +299,6 @@ namespace Microsoft.Samples.Kinect.ColorBasics
 
         private unsafe void checkRectangle(ref Mat testMat)
         {
-            
             int xCoord = 440;
             int yCoord = 440;
             int xSize = 250;
@@ -326,7 +315,6 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             double blue = 0;
             double green = 0;
             double red = 0;
-            
 
             for (int i = 0; i < xSize; i++)
             {
@@ -357,14 +345,11 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         }
 
         //TODO: Request certain pixels
-        private void MapColortoDepth(ColorFrame colorFrame, ref byte[] colorFrameData, int startX, int startY, int widthX, int heightY)
+        private void MapColortoDepth(int startX, int startY, int widthX, int heightY)
         {
             int colorWidth = 1920;
             int colorHeight = 1080;
             double depthCount = 0;
-
-            //colorFrame.CopyConvertedFrameDataToArray(colorFrameData, ColorImageFormat.Bgra);
-            this.colorBitmap.CopyPixels(colorFrameData, this.colorBitmap.BackBufferStride, 0);
 
             for (int colorIndex = 0; colorIndex < this.depthMappedToColorPoints.Length - 4; colorIndex++)
             {
@@ -384,9 +369,9 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                     if (colorX >= startX && colorX <= startX + widthX && colorY >= startY && colorY <= startY + heightY)
                     {
                         depthCount += Convert.ToDouble(depth) / (widthX * heightY);
-                        colorFrameData[colorImageIndex] = (byte)depth;
-                        colorFrameData[colorImageIndex + 1] = (byte)depth;
-                        colorFrameData[colorImageIndex + 2] = (byte)depth;
+                        this.colorFrameData[colorImageIndex] = (byte)depth;
+                        this.colorFrameData[colorImageIndex + 1] = (byte)depth;
+                        this.colorFrameData[colorImageIndex + 2] = (byte)depth;
                         //colorImageIndex++; //Skip Alpha for BGR32 
                     } 
                 }
@@ -396,6 +381,38 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                 Console.Out.WriteLine("Depth: " + depthCount.ToString());
             }
 
+        }
+
+        private void checkKeyPoints()
+        {
+            if (keyCirclePoints != null || keySquarePoints != null)
+            {
+                for (int i = 0; i < keySquarePoints.Length; i++)
+                {
+                    OpenCvSharp.CPlusPlus.Point coordinate = keySquarePoints[i].Pt;
+                    RotatedRect rRect = new RotatedRect(new Point2f(coordinate.X, coordinate.Y), new Size2f(50, 50), 0);
+                    Point2f[] squareVerticies = rRect.Points();
+
+                    int height = (int)(squareVerticies[0].Y - squareVerticies[1].Y);
+                    int width = (int)(squareVerticies[2].X - squareVerticies[1].X);
+                    int startX = (int)(squareVerticies[0].X);
+                    int startY = (int)(squareVerticies[1].Y);
+                    MapColortoDepth(startX, startY, width, height);
+                }
+
+                for (int i = 0; i < keyCirclePoints.Length; i++)
+                {
+                    OpenCvSharp.CPlusPlus.Point coordinate = keyCirclePoints[i].Pt;
+                    RotatedRect rRect = new RotatedRect(new Point2f(coordinate.X, coordinate.Y), new Size2f(50, 50), 0);
+                    Point2f[] circleVerticies = rRect.Points();
+
+                    int height = (int)(circleVerticies[0].Y - circleVerticies[1].Y);
+                    int width = (int)(circleVerticies[2].X - circleVerticies[1].X);
+                    int startX = (int)(circleVerticies[0].X);
+                    int startY = (int)(circleVerticies[1].Y);
+                    MapColortoDepth(startX, startY, width, height);
+                }
+            }
         }
 
         private void RenderDepthPixels()
