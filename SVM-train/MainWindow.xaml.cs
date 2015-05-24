@@ -20,6 +20,8 @@ namespace Microsoft.Samples.Kinect.ColorBasics
     using OpenCvSharp.CPlusPlus;
     using OpenCvSharp.Utilities;
     using OpenCvSharp.Extensions;
+    using System.Collections.Generic;
+
 
     /// <summary>
     /// Interaction logic for MainWindow
@@ -186,7 +188,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                     if (saveShapes)
                     {
                         string path = Path.Combine(myPhotos, "shape_samples");
-                        path = Path.Combine(path, "shape_sample_" + j + ".png");
+                        path = Path.Combine(path, "shape_sample_" + Path.GetRandomFileName() + ".png");
                         var matRect = new OpenCvSharp.CPlusPlus.Rect(0, 0, greyMat.Width, greyMat.Height);
                         rect.Inflate((int)(rect.Width * 0.1), (int)(rect.Height * 0.1));
                         rect = rect.Intersect(matRect);
@@ -210,9 +212,67 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             contourMat.Dispose();
         }
 
-        private void trainSVM()
+        private void trainSVM(string[] shapeTypes)
         {
-            //read from folder
+            string myPhotos = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
+            string folderPath = Path.Combine(myPhotos, "shape_samples");
+
+            CvSVM svm = new CvSVM();
+
+            CvSVMParams svmParams = new CvSVMParams();
+            svmParams.SVMType = CvSVM.C_SVC;
+            svmParams.KernelType = CvSVM.LINEAR;
+            svmParams.C = 0.01;
+
+            int numSamples = Directory.GetFiles(folderPath, "*.png").Length;
+            int numFeatures = 0;
+            if (numSamples == 0) return;
+
+            float[,] extractedFeatures = null;
+            float[] labels = new float[numSamples];
+            int i = 0;
+            foreach(string file in Directory.EnumerateFiles(folderPath, "*.png"))
+            {
+                Bitmap bitmap = (Bitmap)Image.FromFile(file, true);
+                Mat mat = BitmapConverter.ToMat(bitmap);
+
+                HOGDescriptor hog = new HOGDescriptor();
+                hog.WinSize = new OpenCvSharp.CPlusPlus.Size(32, 32); // Set hog features here: winSize; blockSize; cellSize
+                hog.BlockSize = new OpenCvSharp.CPlusPlus.Size(4, 4);
+                hog.CellSize = new OpenCvSharp.CPlusPlus.Size(4, 4);
+                hog.BlockStride = new OpenCvSharp.CPlusPlus.Size(2, 2);
+                float[] features = hog.Compute(mat, new OpenCvSharp.CPlusPlus.Size(16, 16), new OpenCvSharp.CPlusPlus.Size(0, 0), null);
+                if (extractedFeatures == null)
+                {
+                    numFeatures = features.Length;
+                    extractedFeatures = new float[numSamples,numFeatures];
+                }
+                for (int j = 0; j<numFeatures; j++)
+                {
+                    extractedFeatures[i, j] = features[j];
+                }
+                labels[i] = -1;
+                for (int shape = 0; shape < shapeTypes.Length; shape++)
+                {
+                    if (file.ToLower().Contains(shapeTypes[shape].ToLower()))
+                    {
+                        labels[i] = shape;
+                        break;
+                    }
+                }
+                bitmap.Dispose();
+                i++;
+            }
+            Mat labelsMat = new Mat(numSamples, 1, MatType.CV_32FC1, labels);
+            Mat extractedFeaturesMat = new Mat(numSamples, numFeatures, MatType.CV_32FC1, extractedFeatures);
+            try {
+                svm.Train(extractedFeaturesMat, labelsMat, null, null, svmParams);
+                svm.Save(Path.Combine(folderPath, "trained_svm"));
+            }
+            catch(OpenCVException e)
+            {
+                //Only a single class present
+            }     
         }
 
         public static BitmapSource ConvertBitmap(Bitmap source)
@@ -329,6 +389,17 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                 }
                 screenshotAction = true;
             }
+        }
+
+        /// <summary>
+        /// Handles the user clicking on the train SVM button
+        /// </summary>
+        /// <param name="sender">object sending the event</param>
+        /// <param name="e">event arguments</param>
+        private void TrainSvm_Click(object sender, RoutedEventArgs e)
+        {
+            string[] shapes = { "square", "circle", "slider" };
+            trainSVM(shapes);
         }
     }
 }
