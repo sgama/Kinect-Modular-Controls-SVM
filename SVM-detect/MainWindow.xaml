@@ -62,7 +62,7 @@
             <StatusBarItem Content="{Binding FpsText}" />
         </StatusBar>
 
-        <StatusBar Grid.Row="4" HorizontalAlignment="Center" Name="outputBar" VerticalAlignment="Bottom" Background="White" Foreground="{StaticResource MediumGreyBrush}">
+        <StatusBar Grid.Row="4" HorizontalAlignment="Center" Name="outputBar" VerticalAlignment="Bottom" Background="White" Foreground="{StaticResource MediumGreyBrush}" FontWeight="Bold">
             <StatusBarItem Content="{Binding OutputText}" />
         </StatusBar>
     </Grid>
