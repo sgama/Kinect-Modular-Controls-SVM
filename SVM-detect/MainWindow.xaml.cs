@@ -33,12 +33,12 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         /// </summary>
         private KinectSensor kinectSensor = null;
 
+        private MultiSourceFrameReader multiSourceFrameReader;
         private CoordinateMapper coordinateMapper = null;
-        private ColorSpacePoint[] depthMappedToColorPoints = null;
-        private WriteableBitmap colorBitmap = null;
         private FrameDescription colorFrameDescription;
         private FrameDescription depthFrameDescription;
-        private MultiSourceFrameReader multiSourceFrameReader;
+        private ColorSpacePoint[] depthMappedToColorPoints = null;
+        private WriteableBitmap colorBitmap = null;
 
         private byte[] colorFrameData;
 
@@ -51,14 +51,6 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         /// </summary>
         private uint bitmapBackBufferSize = 0;
 
-        private KeyPoint[] keyCirclePoints = null;
-
-        
-        //private Rectangle baseRect;
-        //private Rectangle featureRect;
-        private int featureSize;
-        private double featureDepth;
-
         /// <summary>
         /// Current status text to display
         /// </summary>
@@ -66,8 +58,18 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         private string fpsText = null;
         private string outputText = null;
 
-        private CvSVM svm = null;
+        private KeyPoint[] fingerPoints = null;
+        private int fingerSize;
+        private double fingerDepth;
 
+        //check performance in ticks
+        private const long TICKS_PER_SECOND = 10000000; //according to msdn
+        private double fps = 0;
+        private long prevTick = 0, ticksNow = 0;
+        private double sumFps = 0;
+        private int counter = 0;
+
+        private CvSVM shapeSVM = null;
         private List<Shape> controls = new List<Shape>();
 
         private State state = State.DETECT_CONTROLS;
@@ -80,38 +82,30 @@ namespace Microsoft.Samples.Kinect.ColorBasics
 
         public class Shape
         {
+            public ShapeType type;
+            public OpenCvSharp.CPlusPlus.Rect boundingRect;
+            public Double depth = Double.MinValue;
+
             public enum ShapeType
             {
                 SQUARE,
                 CIRCLE,
                 SLIDER
             }
-            public OpenCvSharp.CPlusPlus.Rect bounds;
-            public ShapeType type;
 
-            public Double depth = -1;
-
-            public Shape(ShapeType type, OpenCvSharp.CPlusPlus.Rect bounds)
+            public Shape(ShapeType type, OpenCvSharp.CPlusPlus.Rect boundingRect)
             {
                 this.type = type;
-                this.bounds = bounds;
+                this.boundingRect = boundingRect;
             }
         }
-
-        //check performance in ticks
-        private const long TICKS_PER_SECOND = 10000000; //according to msdn
-        private double fps = 0;
-        private long prevTick = 0, ticksNow = 0;
-        private double sumFps = 0;
-        private int counter = 0;
 
         /// <summary>
         /// Initializes a new instance of the MainWindow class.
         /// </summary>
         public MainWindow()
         {
-            //load SVM
-            this.svm = loadSVM();
+            this.shapeSVM = loadSVM(); //load SVM
 
             this.kinectSensor = KinectSensor.GetDefault(); // get the kinectSensor object
 
@@ -119,26 +113,21 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             this.multiSourceFrameReader.MultiSourceFrameArrived += MultiSourceFrameReader_MultiSourceFrameArrived;
 
             this.coordinateMapper = this.kinectSensor.CoordinateMapper;
-
             this.depthFrameDescription = this.kinectSensor.DepthFrameSource.FrameDescription;
             this.colorFrameDescription = this.kinectSensor.ColorFrameSource.FrameDescription;
 
-            this.depthMappedToColorPoints = new ColorSpacePoint[this.depthFrameDescription.LengthInPixels];
-
-            // Could copy only the pixels we need with this.colorBitmap.Pixels(...)
             this.colorFrameData = new byte[this.colorFrameDescription.Width * this.colorFrameDescription.Height * 4];
-
-            // ??????
-            this.depthPixels = new byte[this.depthFrameDescription.Width * this.depthFrameDescription.Height];
-
             this.colorBitmap = new WriteableBitmap(this.colorFrameDescription.Width, this.colorFrameDescription.Height, 96.0, 96.0, PixelFormats.Bgr32, null); // create the bitmap to display  
             
+            this.depthMappedToColorPoints = new ColorSpacePoint[this.depthFrameDescription.LengthInPixels];
+            this.depthPixels = new byte[this.depthFrameDescription.Width * this.depthFrameDescription.Height];
+
             int bytesPerPixel = (PixelFormats.Bgr32.BitsPerPixel + 7) / 8;
             // Calculate the WriteableBitmap back buffer size
             this.bitmapBackBufferSize = (uint)((this.colorBitmap.BackBufferStride * (this.colorBitmap.PixelHeight - 1)) + (this.colorBitmap.PixelWidth * bytesPerPixel));
 
             this.kinectSensor.IsAvailableChanged += this.Sensor_IsAvailableChanged; // set IsAvailableChanged event notifier
-            this.kinectSensor.Open(); // open the sensor
+            this.kinectSensor.Open(); // Open the sensor
 
             this.fpsText = "FPS = 0";
             this.outputText = "No state";
@@ -216,6 +205,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                 writeToBackBuffer(ConvertBitmap(colorBitmap), this.colorBitmap);
                 colorBitmap.Dispose();
                 colorFrame.Dispose();
+                colorFrame = null;
                 calculateFps();
             }
             finally
@@ -248,41 +238,40 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             circleParameters.MinCircularity = (float)0.85;
             circleParameters.MaxCircularity = (float)1;
             circleParameters.MinArea = 30; // Modify the value on the fly (TODO use bigger circle)
-            //circleParameters.FilterByArea = true;
-            //circleParameters.MaxArea = 500;
 
             SimpleBlobDetector detectCircleBlobs = new SimpleBlobDetector(circleParameters);
-            keyCirclePoints = detectCircleBlobs.Detect(testMat);
+            fingerPoints = detectCircleBlobs.Detect(testMat);
             detectCircleBlobs.Dispose();
 
             // If Finger found basically
-            if (keyCirclePoints != null)
+            if (fingerPoints != null)
             {
-                this.featureSize = 0;
+                this.fingerSize = 0;
                 int fingerIndex = -1;
-                for (int i = 0; i < keyCirclePoints.Length; i++)
+                for (int i = 0; i < fingerPoints.Length; i++)
                 {
-                    if (keyCirclePoints[i].Size >= this.featureSize)
+                    if (fingerPoints[i].Size >= this.fingerSize)
                     {
-                        this.featureSize = (int)keyCirclePoints[i].Size;
+                        this.fingerSize = (int)fingerPoints[i].Size;
                         fingerIndex = i;
                     }
                 }
 
                 if (fingerIndex != -1)
                 {
-                    OpenCvSharp.CPlusPlus.Point coordinate = keyCirclePoints[fingerIndex].Pt;
-                    this.featureSize = (int)((keyCirclePoints[fingerIndex].Size) * Math.Sqrt(2));
+                    OpenCvSharp.CPlusPlus.Point coordinate = fingerPoints[fingerIndex].Pt;
+                    this.fingerSize = (int)((fingerPoints[fingerIndex].Size) * Math.Sqrt(2));
                     testMat.Set<Vec3b>(coordinate.Y, coordinate.X, new Vec3b(0, 255, 0));
-                    RotatedRect rRect = new RotatedRect(new Point2f(coordinate.X, coordinate.Y), new Size2f(this.featureSize, this.featureSize), 0);
+                    RotatedRect rRect = new RotatedRect(new Point2f(coordinate.X, coordinate.Y), new Size2f(this.fingerSize, this.fingerSize), 0);
                     Point2f[] circleVerticies = rRect.Points();
                     int height = (int)(circleVerticies[0].Y - circleVerticies[1].Y);
                     int width = (int)(circleVerticies[2].X - circleVerticies[1].X);
                     int startX = (int)(circleVerticies[0].X);
                     int startY = (int)(circleVerticies[1].Y);
-                    MapColortoDepth(startX, startY, this.featureSize, this.featureSize, "feature");
-                    OpenCvSharp.CPlusPlus.Rect featureRect = new OpenCvSharp.CPlusPlus.Rect(startX, startY, this.featureSize, this.featureSize);
+                    this.fingerDepth = MapColortoDepth(startX, startY, this.fingerSize, this.fingerSize);
+                    OpenCvSharp.CPlusPlus.Rect featureRect = new OpenCvSharp.CPlusPlus.Rect(startX, startY, this.fingerSize, this.fingerSize);
 
+                    // Draw box around finger
                     for (int j = 0; j < 4; j++)
                     {
                         Cv2.Line(testMat, circleVerticies[j], circleVerticies[(j + 1) % 4], new Scalar(0, 255, 0));
@@ -292,15 +281,13 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                     List<int> intersectIndicies = new List<int>();
                     for (int i = 0; i < this.controls.Count; i++)
                     {
-                        if(this.controls[i].bounds.IntersectsWith(featureRect))
+                        if(this.controls[i].boundingRect.IntersectsWith(featureRect))
                         {
-                            MapColortoDepth(this.controls[i].bounds.TopLeft.X, this.controls[i].bounds.TopLeft.Y, this.controls[i].bounds.Width, this.controls[i].bounds.Height, "base", i);
-                            double diff = featureDepth - this.controls[i].depth;
+                            double diff = fingerDepth - this.controls[i].depth;
                             if (Math.Abs(diff) < 0.5)
                             {
                                 intersectOccurance = true;
                                 intersectIndicies.Add(i);
-                                //Console.Out.WriteLine("Intersection with " + i.ToString() + " Difference: " + diff.ToString() + " CONTACT");
                             }
                         }
                     }
@@ -308,6 +295,10 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                     if (intersectOccurance)
                     {
                         this.OutputText = "Pressed Button "; //TODO Make this more obvious
+                    }
+                    else
+                    {
+                        this.OutputText = "No State";
                     }
 
                 }
@@ -317,8 +308,8 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             testMat.Dispose();
         }
 
-        //TODO: Request certain pixels
-        private void MapColortoDepth(int startX, int startY, int widthX, int heightY, string opt = null, int shapeIndex = -1)
+
+        private Double MapColortoDepth(int startX, int startY, int widthX, int heightY)
         {
             int colorWidth = 1920;
             int colorHeight = 1080;
@@ -349,17 +340,12 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                     }
                 }
             }
-            if (depthCount != 0) //TODO why not make this a return type?
+            //Reconsider logic here
+            if (depthCount != 0)
             {
-                if (opt == "base" && shapeIndex != -1)
-                {
-                    this.controls[shapeIndex].depth = depthCount;
-                }
-                if (opt == "feature")
-                {
-                    this.featureDepth = depthCount;
-                }
+                return depthCount;
             }
+            return Double.MinValue;
 
         }
 
@@ -406,14 +392,14 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                         shapeMat.Dispose();
                         continue;
                     }
-                    if (svm != null)
+                    if (shapeSVM != null)
                     {
                         Mat shapeMat = preprocessShape(rect, greyMat);
-                        float shapeClass = classifyShape(shapeMat, svm);
+                        float shapeClass = classifyShape(shapeMat, shapeSVM);
                         if (shapeClass >= 0)
                         {
                             Shape shape = null;
-                            switch ((int)shapeClass)
+                            switch ((int) shapeClass)
                             {
                                 case 0:
                                     color = Scalar.Red;
@@ -431,13 +417,13 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                             Cv2.Rectangle(colorMat, rect, color, 2);
                             this.controls.Add(shape);
                         }
+                        shapeMat.Dispose();
                     }
                     else {
                         Cv2.Rectangle(colorMat, rect, color, 2);
                     }
                 }
             }
-
             bitmap = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(colorMat);
             colorMat.Dispose();
             greyMat.Dispose();
@@ -463,8 +449,10 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             hog.CellSize = new OpenCvSharp.CPlusPlus.Size(4, 4);
             hog.BlockStride = new OpenCvSharp.CPlusPlus.Size(2, 2);
             float[] features = hog.Compute(shape, new OpenCvSharp.CPlusPlus.Size(16, 16), new OpenCvSharp.CPlusPlus.Size(0, 0), null);
+            hog.Dispose();
             Mat featureMat = new Mat(1, features.Length, MatType.CV_32FC1, features);
             float prediction = svm.Predict(featureMat.ToCvMat());
+            featureMat.Dispose();
             return prediction;
         }
 
@@ -747,15 +735,27 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                 state = State.MAIN;
 
                 //shapes are now stored in this.controls
-                int numSquares = 0, numCircles = 0, numSliders = 0;
+                int numSquares = 0, numCircles = 0, numSliders = 0, i = 0;
+                Double shapeDepth;
                 foreach (Shape shape in this.controls)
                 {
-                    if (shape.type == Shape.ShapeType.SQUARE) numSquares++;
-                    if (shape.type == Shape.ShapeType.CIRCLE) numCircles++;
-                    if (shape.type == Shape.ShapeType.SLIDER) numSliders++;
+                    shapeDepth = MapColortoDepth(this.controls[i].boundingRect.TopLeft.X, this.controls[i].boundingRect.TopLeft.Y, this.controls[i].boundingRect.Width, this.controls[i].boundingRect.Height);
+                    this.controls[i].depth = shapeDepth;
+                    if (shape.type == Shape.ShapeType.SQUARE)
+                    {
+                        numSquares++;
+                    }
+                    if (shape.type == Shape.ShapeType.CIRCLE)
+                    {
+                        numCircles++;
+                    }
+                    if (shape.type == Shape.ShapeType.SLIDER)
+                    {
+                        numSliders++;
+                    }
+                    i++;
                 }
-                MessageBox.Show("Shapes calibrated. Squares: " + numSquares + ", Circles: " + numCircles + ", Sliders: " + numSliders);
-                
+                MessageBox.Show("Shapes calibrated. Squares: " + numSquares + ", Circles: " + numCircles + ", Sliders: " + numSliders, "Calibration Complete");
             }
         }
 
@@ -772,8 +772,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             }
             catch (System.IO.FileNotFoundException)
             {
-                MessageBox.Show("There was an error opening the bitmap." +
-                    "Please check the path.");
+                MessageBox.Show("There was an error opening the bitmap." + "Please check the path.");
             }
         }
     }
