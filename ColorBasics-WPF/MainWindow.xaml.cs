@@ -48,6 +48,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         /// </summary>
         private string statusText = null;
         private string fpsText = null;
+        private string calibrationText = null;
 
         private FrameDescription colorFrameDescription;
         private FrameDescription depthFrameDescription;
@@ -74,6 +75,13 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         private Boolean isCalibrated = false;
         private KeyPoint[] keyCirclePoints = null;
         private KeyPoint[] keySquarePoints = null;
+
+        private double baseDepth;
+        private double featureDepth;
+        private Rectangle baseRect;
+        private Rectangle featureRect;
+        private int[] featureCoord;
+        private int featureSize;
 
         /// <summary>
         /// Initializes a new instance of the MainWindow class.
@@ -108,7 +116,10 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             this.kinectSensor.IsAvailableChanged += this.Sensor_IsAvailableChanged; // set IsAvailableChanged event notifier
             this.kinectSensor.Open(); // open the sensor
 
+            this.featureCoord = new int[2];
+
             this.fpsText = "FPS = 0";
+            this.CalibrationText = "Calibration - " + isCalibrated.ToString();
             this.StatusText = this.kinectSensor.IsAvailable ? Properties.Resources.RunningStatusText : Properties.Resources.NoSensorStatusText; // set the status text
             this.DataContext = this; // use the window object as the view model in this simple example
             this.InitializeComponent(); // initialize the components (controls) of the window
@@ -120,7 +131,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                     string myPhotos = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
                     string path = Path.Combine(myPhotos, "KinectScreenshot-Color-test.png");
                     Bitmap bitmap = (Bitmap)Image.FromFile(path, true);
-                    OpenCV(ref bitmap);
+                    //OpenCV(ref bitmap);
                     writeToBackBuffer(ConvertBitmap(bitmap), this.colorBitmap);
                     bitmap.Dispose();
                 }
@@ -235,28 +246,26 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             if (isCalibrated == false)
             {
                 SimpleBlobDetector.Params squareParameters = new SimpleBlobDetector.Params();
-                SimpleBlobDetector.Params circleParameters = new SimpleBlobDetector.Params();
-
                 squareParameters.FilterByCircularity = true;
                 squareParameters.MinCircularity = (float)0.75;
                 squareParameters.MaxCircularity = (float)0.8;
                 squareParameters.FilterByArea = true;
                 squareParameters.MaxArea = 500;
-
-                circleParameters.FilterByCircularity = true;
-                circleParameters.MinCircularity = (float)0.90;
-                circleParameters.MaxCircularity = (float)1;
-                circleParameters.FilterByArea = true;
-                circleParameters.MaxArea = 500;
-
                 SimpleBlobDetector detectSquareBlobs = new SimpleBlobDetector(squareParameters);
                 keySquarePoints = detectSquareBlobs.Detect(testMat);
                 detectSquareBlobs.Dispose();
-
-                SimpleBlobDetector detectCircleBlobs = new SimpleBlobDetector(circleParameters);
-                keyCirclePoints = detectCircleBlobs.Detect(testMat);
-                detectCircleBlobs.Dispose();
             }
+
+            SimpleBlobDetector.Params circleParameters = new SimpleBlobDetector.Params();
+            circleParameters.FilterByCircularity = true;
+            circleParameters.MinCircularity = (float)0.85;
+            circleParameters.MaxCircularity = (float)1;
+            //circleParameters.FilterByArea = true;
+            //circleParameters.MaxArea = 500;
+            SimpleBlobDetector detectCircleBlobs = new SimpleBlobDetector(circleParameters);
+            keyCirclePoints = detectCircleBlobs.Detect(testMat);
+            detectCircleBlobs.Dispose();
+                
 
             if (keyCirclePoints != null || keySquarePoints != null)
             {
@@ -271,13 +280,15 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                     {
                         Cv2.Line(testMat, squareVerticies[j], squareVerticies[(j + 1) % 4], new Scalar(255, 0, 0));
                     }
-                }
+                }   
 
                 for (int i = 0; i < keyCirclePoints.Length; i++)
                 {
                     OpenCvSharp.CPlusPlus.Point coordinate = keyCirclePoints[i].Pt;
+                    int size = (int) (keyCirclePoints[i].Size);
+                    
                     testMat.Set<Vec3b>(coordinate.Y, coordinate.X, new Vec3b(0, 255, 0));
-                    RotatedRect rRect = new RotatedRect(new Point2f(coordinate.X, coordinate.Y), new Size2f(50, 50), 0);
+                    RotatedRect rRect = new RotatedRect(new Point2f(coordinate.X, coordinate.Y), new Size2f(size, size), 0);
                     Point2f[] circleVerticies = rRect.Points();
 
                     for (int j = 0; j < 4; j++)
@@ -345,7 +356,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         }
 
         //TODO: Request certain pixels
-        private void MapColortoDepth(int startX, int startY, int widthX, int heightY)
+        private void MapColortoDepth(int startX, int startY, int widthX, int heightY, string opt = null)
         {
             int colorWidth = 1920;
             int colorHeight = 1080;
@@ -378,40 +389,115 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             }
             if (depthCount != 0)
             {
-                Console.Out.WriteLine("Depth: " + depthCount.ToString());
+                if (opt == "base")
+                {
+                    this.baseDepth = depthCount;
+                }
+                if (opt == "feature")
+                {
+                    this.featureDepth = depthCount;
+                }
+                //Console.Out.WriteLine("Depth: " + depthCount.ToString()+ " N: " + near.ToString() + " F: " + far.ToString());
             }
 
         }
 
+
+        private double getDepthForPixel(int startX, int startY, int widthX, int heightY)
+        {
+            int colorWidth = 1920;
+            int colorHeight = 1080;
+            double depthCount = 0;
+
+            for (int colorIndex = 0; colorIndex < this.depthMappedToColorPoints.Length - 4; colorIndex++)
+            {
+                ushort depth = this.depthPixels[colorIndex];
+                ColorSpacePoint point = this.depthMappedToColorPoints[colorIndex];
+
+                // round down to the nearest pixel
+                int colorX = (int)Math.Floor(point.X + 0.5);
+                int colorY = (int)Math.Floor(point.Y + 0.5);
+
+                // make sure the pixel is part of the image
+                if ((colorX >= 0 && (colorX < colorWidth) && (colorY >= 0) && (colorY < colorHeight)))
+                {
+                    int colorImageIndex = ((colorWidth * colorY) + colorX) * 4;
+
+                    // Check if pixels are within the range of the bounding box
+                    if (colorX >= startX && colorX <= startX + widthX && colorY >= startY && colorY <= startY + heightY)
+                    {
+                        depthCount += Convert.ToDouble(depth);
+                    }
+                }
+            }
+            return depthCount;
+
+        }
+
+        // TODO: Refactor method to take in parameters
         private void checkKeyPoints()
         {
             if (keyCirclePoints != null || keySquarePoints != null)
             {
-                for (int i = 0; i < keySquarePoints.Length; i++)
+                if (isCalibrated == false)
                 {
-                    OpenCvSharp.CPlusPlus.Point coordinate = keySquarePoints[i].Pt;
-                    RotatedRect rRect = new RotatedRect(new Point2f(coordinate.X, coordinate.Y), new Size2f(50, 50), 0);
-                    Point2f[] squareVerticies = rRect.Points();
+                    for (int i = 0; i < keySquarePoints.Length; i++)
+                    {
+                        OpenCvSharp.CPlusPlus.Point coordinate = keySquarePoints[i].Pt;
+                        RotatedRect rRect = new RotatedRect(new Point2f(coordinate.X, coordinate.Y), new Size2f(50, 50), 0);
+                        Point2f[] squareVerticies = rRect.Points();
 
-                    int height = (int)(squareVerticies[0].Y - squareVerticies[1].Y);
-                    int width = (int)(squareVerticies[2].X - squareVerticies[1].X);
-                    int startX = (int)(squareVerticies[0].X);
-                    int startY = (int)(squareVerticies[1].Y);
-                    MapColortoDepth(startX, startY, width, height);
+                        int height = (int)(squareVerticies[0].Y - squareVerticies[1].Y);
+                        int width = (int)(squareVerticies[2].X - squareVerticies[1].X);
+                        int startX = (int)(squareVerticies[0].X);
+                        int startY = (int)(squareVerticies[1].Y);
+                        MapColortoDepth(startX, startY, width, height, "base");
+                        baseRect = new Rectangle(startX, startY, width, height);
+                    }
                 }
+                
 
                 for (int i = 0; i < keyCirclePoints.Length; i++)
                 {
                     OpenCvSharp.CPlusPlus.Point coordinate = keyCirclePoints[i].Pt;
                     RotatedRect rRect = new RotatedRect(new Point2f(coordinate.X, coordinate.Y), new Size2f(50, 50), 0);
                     Point2f[] circleVerticies = rRect.Points();
-
+                    this.featureSize = (int) keyCirclePoints[i].Size;
+                    this.featureCoord[0] = coordinate.X;
+                    this.featureCoord[1] = coordinate.Y;
                     int height = (int)(circleVerticies[0].Y - circleVerticies[1].Y);
                     int width = (int)(circleVerticies[2].X - circleVerticies[1].X);
                     int startX = (int)(circleVerticies[0].X);
                     int startY = (int)(circleVerticies[1].Y);
-                    MapColortoDepth(startX, startY, width, height);
+                    MapColortoDepth(startX, startY, width, height, "feature");
+                    featureRect = new Rectangle(startX, startY, width, height);
                 }
+                //Console.Out.WriteLine("baseR: " + baseRect.Left.ToString() + " baseF: " + featureRect.Left.ToString());
+
+                
+                // Check if there is a touch?
+                if (isCalibrated == true)
+                {
+                    if (baseRect.IntersectsWith(featureRect))
+                    {
+                        double diff = featureDepth - baseDepth;
+                        if (Math.Abs(diff) < 0.5)
+                        {
+                            Console.Out.WriteLine("Difference: " + diff.ToString() + " CONTACT");
+                        }
+                        
+                    }
+                }
+                /*
+                double fingerDepth = getDepthForPixel(this.featureCoord[0], this.featureCoord[1], featureSize, featureSize);
+                double underFingerDepth = getDepthForPixel(this.featureCoord[0], this.featureCoord[1] + 50, featureSize, featureSize);
+                double diff = fingerDepth - underFingerDepth;
+                if (Math.Abs(diff) < 50) {
+                    Console.Out.WriteLine("TOUCHING with Difference: " + diff.ToString());
+                }
+                */
+
+
             }
         }
 
@@ -609,6 +695,27 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             }
         }
 
+        public string CalibrationText
+        {
+            get
+            {
+                return this.calibrationText;
+            }
+
+            set
+            {
+                if (this.calibrationText != value)
+                {
+                    this.calibrationText = value;
+                    // notify any bound elements that the text has changed
+                    if (this.PropertyChanged != null)
+                    {
+                        this.PropertyChanged(this, new PropertyChangedEventArgs("CalibrationText"));
+                    }
+                }
+            }
+        }
+
         /// <summary>
         /// Execute shutdown tasks
         /// </summary>
@@ -671,7 +778,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         private void CalibrateButton_Click(object sender, RoutedEventArgs e)
         {
             isCalibrated = !isCalibrated;
-            Console.Out.WriteLine("isCalibrated is now: " + isCalibrated.ToString());
+            this.CalibrationText = "Calibration - " + isCalibrated.ToString();
         }
 
     }
