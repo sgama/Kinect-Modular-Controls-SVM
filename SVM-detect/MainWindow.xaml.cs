@@ -64,6 +64,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         /// </summary>
         private string statusText = null;
         private string fpsText = null;
+        private string outputText = null;
 
         private CvSVM svm = null;
 
@@ -140,6 +141,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             this.kinectSensor.Open(); // open the sensor
 
             this.fpsText = "FPS = 0";
+            this.outputText = "No state";
             this.StatusText = this.kinectSensor.IsAvailable ? Properties.Resources.RunningStatusText : Properties.Resources.NoSensorStatusText; // set the status text
             this.DataContext = this; // use the window object as the view model in this simple example
             this.InitializeComponent(); // initialize the components (controls) of the window
@@ -286,6 +288,8 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                         Cv2.Line(testMat, circleVerticies[j], circleVerticies[(j + 1) % 4], new Scalar(0, 255, 0));
                     }
 
+                    Boolean intersectOccurance = false;
+                    List<int> intersectIndicies = new List<int>();
                     for (int i = 0; i < this.controls.Count; i++)
                     {
                         if(this.controls[i].bounds.IntersectsWith(featureRect))
@@ -294,10 +298,18 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                             double diff = featureDepth - this.controls[i].depth;
                             if (Math.Abs(diff) < 0.5)
                             {
-                                Console.Out.WriteLine("Intersection with " + i.ToString() + " Difference: " + diff.ToString() + " CONTACT");
+                                intersectOccurance = true;
+                                intersectIndicies.Add(i);
+                                //Console.Out.WriteLine("Intersection with " + i.ToString() + " Difference: " + diff.ToString() + " CONTACT");
                             }
                         }
                     }
+
+                    if (intersectOccurance)
+                    {
+                        this.OutputText = "Pressed Button "; //TODO Make this more obvious
+                    }
+
                 }
             }
 
@@ -646,6 +658,30 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                     if (this.PropertyChanged != null)
                     {
                         this.PropertyChanged(this, new PropertyChangedEventArgs("FpsText"));
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets the current status text to display
+        /// </summary>
+        public string OutputText
+        {
+            get
+            {
+                return this.outputText;
+            }
+
+            set
+            {
+                if (this.outputText != value)
+                {
+                    this.outputText = value;
+                    // notify any bound elements that the text has changed
+                    if (this.PropertyChanged != null)
+                    {
+                        this.PropertyChanged(this, new PropertyChangedEventArgs("OutputText"));
                     }
                 }
             }
