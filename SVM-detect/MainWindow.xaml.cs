@@ -33,15 +33,35 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         /// </summary>
         private KinectSensor kinectSensor = null;
 
-        /// <summary>
-        /// Reader for color frames
-        /// </summary>
-        private ColorFrameReader colorFrameReader = null;
+        private CoordinateMapper coordinateMapper = null;
+        private ColorSpacePoint[] depthMappedToColorPoints = null;
+        private WriteableBitmap colorBitmap = null;
+        private WriteableBitmap depthBitmap = null;
+        private FrameDescription colorFrameDescription;
+        private FrameDescription depthFrameDescription;
+        private MultiSourceFrameReader multiSourceFrameReader;
+
+        private byte[] colorFrameData;
+
+        //Depth Frame
+        private byte[] depthPixels = null;
+        private const int MapDepthToByte = 8000 / 256;
 
         /// <summary>
-        /// Bitmap to display
+        /// The size in bytes of the bitmap back buffer
         /// </summary>
-        private WriteableBitmap colorBitmap = null;
+        private uint bitmapBackBufferSize = 0;
+
+        private Boolean isCalibrated = false;
+        private KeyPoint[] keyCirclePoints = null;
+        private KeyPoint[] keySquarePoints = null;
+
+        private double baseDepth;
+        private double featureDepth;
+        private Rectangle baseRect;
+        private Rectangle featureRect;
+        private int[] featureCoord;
+        private int featureSize;
 
         /// <summary>
         /// Current status text to display
@@ -88,14 +108,33 @@ namespace Microsoft.Samples.Kinect.ColorBasics
 
             this.kinectSensor = KinectSensor.GetDefault(); // get the kinectSensor object
 
-            this.colorFrameReader = this.kinectSensor.ColorFrameSource.OpenReader(); // open the reader for the color frames
-            this.colorFrameReader.FrameArrived += this.Reader_ColorFrameArrived;  // wire handler for frame arrival
-            FrameDescription colorFrameDescription = this.kinectSensor.ColorFrameSource.CreateFrameDescription(ColorImageFormat.Bgra);// create the colorFrameDescription from the ColorFrameSource using Bgra format
-            this.colorBitmap = new WriteableBitmap(colorFrameDescription.Width, colorFrameDescription.Height, 96.0, 96.0, PixelFormats.Bgr32, null); // create the bitmap to display
+            this.multiSourceFrameReader = this.kinectSensor.OpenMultiSourceFrameReader(FrameSourceTypes.Color | FrameSourceTypes.Depth | FrameSourceTypes.BodyIndex);
+            this.multiSourceFrameReader.MultiSourceFrameArrived += MultiSourceFrameReader_MultiSourceFrameArrived;
+
+            this.coordinateMapper = this.kinectSensor.CoordinateMapper;
+
+            this.depthFrameDescription = this.kinectSensor.DepthFrameSource.FrameDescription;
+            this.colorFrameDescription = this.kinectSensor.ColorFrameSource.FrameDescription;
+
+            this.depthMappedToColorPoints = new ColorSpacePoint[this.depthFrameDescription.LengthInPixels];
+
+            // Could copy only the pixels we need with this.colorBitmap.Pixels(...)
+            this.colorFrameData = new byte[this.colorFrameDescription.Width * this.colorFrameDescription.Height * 4];
+
+            // ??????
+            this.depthPixels = new byte[this.depthFrameDescription.Width * this.depthFrameDescription.Height];
+
+            this.colorBitmap = new WriteableBitmap(this.colorFrameDescription.Width, this.colorFrameDescription.Height, 96.0, 96.0, PixelFormats.Bgr32, null); // create the bitmap to display  
+            this.depthBitmap = new WriteableBitmap(this.depthFrameDescription.Width, this.depthFrameDescription.Height, 96.0, 96.0, PixelFormats.Gray8, null);
+
+            int bytesPerPixel = (PixelFormats.Bgr32.BitsPerPixel + 7) / 8;
+            // Calculate the WriteableBitmap back buffer size
+            this.bitmapBackBufferSize = (uint)((this.colorBitmap.BackBufferStride * (this.colorBitmap.PixelHeight - 1)) + (this.colorBitmap.PixelWidth * bytesPerPixel));
 
             this.kinectSensor.IsAvailableChanged += this.Sensor_IsAvailableChanged; // set IsAvailableChanged event notifier
-
             this.kinectSensor.Open(); // open the sensor
+
+            this.featureCoord = new int[2];
 
             this.StatusText = this.kinectSensor.IsAvailable ? Properties.Resources.RunningStatusText : Properties.Resources.NoSensorStatusText; // set the status text
             this.DataContext = this; // use the window object as the view model in this simple example
@@ -112,68 +151,297 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         /// </summary>
         /// <param name="sender">object sending the event</param>
         /// <param name="e">event arguments</param>
-        private void Reader_ColorFrameArrived(object sender, ColorFrameArrivedEventArgs e)
+        private unsafe void MultiSourceFrameReader_MultiSourceFrameArrived(object sender, MultiSourceFrameArrivedEventArgs e)
         {
-            // ColorFrame is IDisposable
-            using (ColorFrame colorFrame = e.FrameReference.AcquireFrame())
+            DepthFrame depthFrame = null;
+            ColorFrame colorFrame = null;
+
+            MultiSourceFrame multiSourceFrame = e.FrameReference.AcquireFrame();
+
+            // If the Frame has expired by the time we process this event, return.
+            if (multiSourceFrame == null)
             {
+                return;
+            }
+
+            // We use a try/finally to ensure that we clean up before we exit the function.  
+            // This includes calling Dispose on any Frame objects that we may have and unlocking the bitmap back buffer.
+            try
+            {
+                depthFrame = multiSourceFrame.DepthFrameReference.AcquireFrame();
+                colorFrame = multiSourceFrame.ColorFrameReference.AcquireFrame();
+
+                // If any frame has expired by the time we process this event, return. The "finally" statement will Dispose any that are not null.
+                if ((depthFrame == null) || (colorFrame == null))
+                {
+                    return;
+                }
+                this.multiSourceFrameReader.IsPaused = true;
+
+                // Process Depth
+                FrameDescription depthFrameDescription = depthFrame.FrameDescription;
+                FrameDescription colorFrameDescription = colorFrame.FrameDescription;
+
+                // Access the depth frame data directly via LockImageBuffer to avoid making a copy
+                using (KinectBuffer depthFrameData = depthFrame.LockImageBuffer())
+                {
+                    this.coordinateMapper.MapDepthFrameToColorSpaceUsingIntPtr(depthFrameData.UnderlyingBuffer, depthFrameData.Size, this.depthMappedToColorPoints);
+                    ushort maxDepth = ushort.MaxValue;
+                    this.ProcessDepthFrameData(depthFrameData.UnderlyingBuffer, depthFrameData.Size, depthFrame.DepthMinReliableDistance, maxDepth);
+                }
+                //RenderDepthPixels();
+
+                // We're done with the DepthFrame 
+                depthFrame.Dispose();
+                depthFrame = null;
+
+                // Process Color
+                //colorFrame.CopyConvertedFrameDataToIntPtr(this.colorBitmap.BackBuffer, this.bitmapBackBufferSize, ColorImageFormat.Bgra);  
+
+                BitmapSource colorSource = getColorImage(colorFrameDescription, colorFrame);
+                Bitmap colorBitmap = getBitmap(colorSource);
+
+                switch (state)
+                {
+                    case State.DETECT_CONTROLS:
+                        detectShapeCandidates(ref colorBitmap, false);
+                        OpenCV(ref colorBitmap);
+                        break;
+                    case State.MAIN:
+                        break;
+                }
+
+                writeToBackBuffer(ConvertBitmap(colorBitmap), this.colorBitmap);
+                colorBitmap.Dispose();
+
+                // Call below is more efficient
+                //colorFrame.CopyConvertedFrameDataToArray(this.colorFrameData, ColorImageFormat.Bgra);
+
+                // But we use this instead so we can use the mat, without it bounding boxes are not shown.
+                this.colorBitmap.CopyPixels(this.colorFrameData, this.colorBitmap.BackBufferStride, 0);
+
+                checkKeyPoints();
+
+
+                this.colorBitmap.Lock();
+                this.colorBitmap.WritePixels(new Int32Rect(0, 0, this.colorFrameDescription.Width, this.colorFrameDescription.Height), this.colorFrameData, this.colorFrameDescription.Width * 4, 0);
+                this.colorBitmap.Unlock();
+                // We're done with the ColorFrame 
+                Array.Clear(this.colorFrameData, 0, this.colorFrameData.Length);
+                colorFrame.Dispose();
+                colorFrame = null;
+            }
+            finally
+            {
+                if (depthFrame != null)
+                {
+                    depthFrame.Dispose();
+                }
+
                 if (colorFrame != null)
                 {
-                    FrameDescription colorFrameDescription = colorFrame.FrameDescription;
-
-                    using (KinectBuffer colorBuffer = colorFrame.LockRawImageBuffer())
-                    {
-                        this.colorFrameReader.IsPaused = true;
-
-                        // verify data and write the new color frame data to the display bitmap
-                        if ((colorFrameDescription.Width == this.colorBitmap.PixelWidth) && (colorFrameDescription.Height == this.colorBitmap.PixelHeight))
-                        {
-                            byte[] pixels = new byte[colorFrameDescription.Height * colorFrameDescription.Width * 4];
-                            colorFrame.CopyConvertedFrameDataToArray(pixels, ColorImageFormat.Bgra);
-                            int stride = colorFrameDescription.Width * 4;
-                            BitmapSource source = BitmapSource.Create(colorFrameDescription.Width, colorFrameDescription.Height, 96, 96, PixelFormats.Bgr32, null, pixels, stride);
-
-                            Bitmap bitmap;
-                            using (MemoryStream outStream = new MemoryStream())
-                            {
-                                BitmapEncoder enc = new BmpBitmapEncoder();
-                                enc.Frames.Add(BitmapFrame.Create(source));
-                                enc.Save(outStream);
-                                bitmap = new Bitmap(outStream);
-                            }
-
-                            switch (state)
-                            {
-                                case State.DETECT_CONTROLS:
-                                    detectShapeCandidates(ref bitmap, false);
-                                    break;
-                                case State.MAIN:
-                                    break;
-                            }
-                            
-                            writeToBackBuffer(ConvertBitmap(bitmap));
-                            bitmap.Dispose();
-                           
-                            
-                        }
-
-                        this.colorFrameReader.IsPaused = false;
-                    }
+                    colorFrame.Dispose();
                 }
+                this.multiSourceFrameReader.IsPaused = false;
             }
         }
 
-        private void writeToBackBuffer(BitmapSource source)
+
+        // TODO: Refactor method to take in parameters
+        private void checkKeyPoints()
         {
-            this.colorBitmap.Lock();
+            if (keyCirclePoints != null || keySquarePoints != null)
+            {
+                if (isCalibrated == false)
+                {
+                    for (int i = 0; i < keySquarePoints.Length; i++)
+                    {
+                        OpenCvSharp.CPlusPlus.Point coordinate = keySquarePoints[i].Pt;
+                        RotatedRect rRect = new RotatedRect(new Point2f(coordinate.X, coordinate.Y), new Size2f(50, 50), 0);
+                        Point2f[] squareVerticies = rRect.Points();
+
+                        int height = (int)(squareVerticies[0].Y - squareVerticies[1].Y);
+                        int width = (int)(squareVerticies[2].X - squareVerticies[1].X);
+                        int startX = (int)(squareVerticies[0].X);
+                        int startY = (int)(squareVerticies[1].Y);
+                        MapColortoDepth(startX, startY, width, height, "base");
+                        baseRect = new Rectangle(startX, startY, width, height);
+                    }
+                }
+
+
+                for (int i = 0; i < keyCirclePoints.Length; i++)
+                {
+                    OpenCvSharp.CPlusPlus.Point coordinate = keyCirclePoints[i].Pt;
+                    RotatedRect rRect = new RotatedRect(new Point2f(coordinate.X, coordinate.Y), new Size2f(50, 50), 0);
+                    Point2f[] circleVerticies = rRect.Points();
+                    this.featureSize = (int)keyCirclePoints[i].Size;
+                    this.featureCoord[0] = coordinate.X;
+                    this.featureCoord[1] = coordinate.Y;
+                    int height = (int)(circleVerticies[0].Y - circleVerticies[1].Y);
+                    int width = (int)(circleVerticies[2].X - circleVerticies[1].X);
+                    int startX = (int)(circleVerticies[0].X);
+                    int startY = (int)(circleVerticies[1].Y);
+                    MapColortoDepth(startX, startY, width, height, "feature");
+                    featureRect = new Rectangle(startX, startY, width, height);
+                }
+
+                // Check if there is a touch?
+                if (isCalibrated == true)
+                {
+                    if (baseRect.IntersectsWith(featureRect))
+                    {
+                        double diff = featureDepth - baseDepth;
+                        if (Math.Abs(diff) < 0.5)
+                        {
+                            Console.Out.WriteLine("Difference: " + diff.ToString() + " CONTACT");
+                        }
+
+                    }
+                }
+                /*
+                double fingerDepth = getDepthForPixel(this.featureCoord[0], this.featureCoord[1], featureSize, featureSize);
+                double underFingerDepth = getDepthForPixel(this.featureCoord[0], this.featureCoord[1] + 50, featureSize, featureSize);
+                double diff = fingerDepth - underFingerDepth;
+                if (Math.Abs(diff) < 50) {
+                    Console.Out.WriteLine("TOUCHING with Difference: " + diff.ToString());
+                }
+                */
+
+
+            }
+        }
+
+        //TODO: Request certain pixels
+        private void MapColortoDepth(int startX, int startY, int widthX, int heightY, string opt = null)
+        {
+            int colorWidth = 1920;
+            int colorHeight = 1080;
+            double depthCount = 0;
+
+            for (int colorIndex = 0; colorIndex < this.depthMappedToColorPoints.Length - 4; colorIndex++)
+            {
+                ushort depth = this.depthPixels[colorIndex];
+                ColorSpacePoint point = this.depthMappedToColorPoints[colorIndex];
+
+                // round down to the nearest pixel
+                int colorX = (int)Math.Floor(point.X + 0.5);
+                int colorY = (int)Math.Floor(point.Y + 0.5);
+
+                // make sure the pixel is part of the image
+                if ((colorX >= 0 && (colorX < colorWidth) && (colorY >= 0) && (colorY < colorHeight)))
+                {
+                    int colorImageIndex = ((colorWidth * colorY) + colorX) * 4;
+
+                    // Check if pixels are within the range of the bounding box
+                    if (colorX >= startX && colorX <= startX + widthX && colorY >= startY && colorY <= startY + heightY)
+                    {
+                        depthCount += Convert.ToDouble(depth) / (widthX * heightY);
+                        this.colorFrameData[colorImageIndex] = (byte)depth;
+                        this.colorFrameData[colorImageIndex + 1] = (byte)depth;
+                        this.colorFrameData[colorImageIndex + 2] = (byte)depth;
+                        //colorImageIndex++; //Skip Alpha for BGR32 
+                    }
+                }
+            }
+            if (depthCount != 0)
+            {
+                if (opt == "base")
+                {
+                    this.baseDepth = depthCount;
+                }
+                if (opt == "feature")
+                {
+                    this.featureDepth = depthCount;
+                }
+                //Console.Out.WriteLine("Depth: " + depthCount.ToString()+ " N: " + near.ToString() + " F: " + far.ToString());
+            }
+
+        }
+
+        private unsafe void OpenCV(ref Bitmap bitmap)
+        {
+            Mat testMat = BitmapConverter.ToMat(bitmap);
+            MatOfDouble mu = new MatOfDouble();
+            MatOfDouble sigma = new MatOfDouble();
+            Cv2.MeanStdDev(testMat, mu, sigma);
+            double mean = mu.GetArray(0, 0)[0];
+            mu.Dispose();
+            sigma.Dispose();
+
+            if (isCalibrated == false)
+            {
+                SimpleBlobDetector.Params squareParameters = new SimpleBlobDetector.Params();
+                squareParameters.FilterByCircularity = true;
+                squareParameters.MinCircularity = (float)0.75;
+                squareParameters.MaxCircularity = (float)0.8;
+                squareParameters.FilterByArea = true;
+                squareParameters.MaxArea = 500;
+                SimpleBlobDetector detectSquareBlobs = new SimpleBlobDetector(squareParameters);
+                keySquarePoints = detectSquareBlobs.Detect(testMat);
+                detectSquareBlobs.Dispose();
+            }
+
+            SimpleBlobDetector.Params circleParameters = new SimpleBlobDetector.Params();
+            circleParameters.FilterByCircularity = true;
+            circleParameters.MinCircularity = (float)0.85;
+            circleParameters.MaxCircularity = (float)1;
+            //circleParameters.FilterByArea = true;
+            //circleParameters.MaxArea = 500;
+            SimpleBlobDetector detectCircleBlobs = new SimpleBlobDetector(circleParameters);
+            keyCirclePoints = detectCircleBlobs.Detect(testMat);
+            detectCircleBlobs.Dispose();
+
+            if (keyCirclePoints != null || keySquarePoints != null)
+            {
+                for (int i = 0; i < keySquarePoints.Length; i++)
+                {
+                    OpenCvSharp.CPlusPlus.Point coordinate = keySquarePoints[i].Pt;
+                    testMat.Set<Vec3b>(coordinate.Y, coordinate.X, new Vec3b(255, 0, 0));
+                    RotatedRect rRect = new RotatedRect(new Point2f(coordinate.X, coordinate.Y), new Size2f(50, 50), 0);
+                    Point2f[] squareVerticies = rRect.Points();
+
+                    for (int j = 0; j < 4; j++)
+                    {
+                        Cv2.Line(testMat, squareVerticies[j], squareVerticies[(j + 1) % 4], new Scalar(255, 0, 0));
+                    }
+                }
+
+                for (int i = 0; i < keyCirclePoints.Length; i++)
+                {
+                    OpenCvSharp.CPlusPlus.Point coordinate = keyCirclePoints[i].Pt;
+                    int size = (int)(keyCirclePoints[i].Size);
+
+                    testMat.Set<Vec3b>(coordinate.Y, coordinate.X, new Vec3b(0, 255, 0));
+                    RotatedRect rRect = new RotatedRect(new Point2f(coordinate.X, coordinate.Y), new Size2f(size, size), 0);
+                    Point2f[] circleVerticies = rRect.Points();
+
+                    for (int j = 0; j < 4; j++)
+                    {
+                        Cv2.Line(testMat, circleVerticies[j], circleVerticies[(j + 1) % 4], new Scalar(0, 255, 0));
+                    }
+                }
+            }
+
+            //Cv2.CvtColor(testMat, testMat, ColorConversion.BgraToGray, 0);
+            //testMat = testMat.GaussianBlur(new OpenCvSharp.CPlusPlus.Size(1, 1), 5, 5, BorderType.Default);
+            //testMat = testMat.Canny(0.5 * mean, 1.2 * mean, 3, true);
+
+            bitmap = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(testMat);
+            testMat.Dispose();
+        }
+
+        private unsafe void writeToBackBuffer(BitmapSource source, WriteableBitmap bitmap)
+        {
+            bitmap.Lock();
             int stride = source.PixelWidth * (source.Format.BitsPerPixel / 8); // Calculate stride of source
             byte[] data = new byte[stride * source.PixelHeight]; // Create data array to hold source pixel data
             source.CopyPixels(data, stride, 0); // Copy source image pixels to the data array
 
             // Write the pixel data to the WriteableBitmap.
-            this.colorBitmap.WritePixels(new Int32Rect(0, 0, source.PixelWidth, source.PixelHeight), data, stride, 0);
-            this.colorBitmap.AddDirtyRect(new Int32Rect(0, 0, source.PixelWidth, source.PixelHeight));
-            this.colorBitmap.Unlock();
+            bitmap.WritePixels(new Int32Rect(0, 0, source.PixelWidth, source.PixelHeight), data, stride, 0);
+            bitmap.AddDirtyRect(new Int32Rect(0, 0, source.PixelWidth, source.PixelHeight));
+            bitmap.Unlock();
         }
 
         private void detectShapeCandidates(ref Bitmap bitmap, Boolean saveShapes)
@@ -294,7 +562,86 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             return svm;
         }
 
-           
+        private unsafe BitmapSource getColorImage(FrameDescription colorFrameDescription, ColorFrame colorFrame)
+        {
+            byte[] pixels = new byte[colorFrameDescription.Height * colorFrameDescription.Width * 4];
+            colorFrame.CopyConvertedFrameDataToArray(pixels, ColorImageFormat.Bgra);
+            int stride = colorFrameDescription.Width * 4;
+            return BitmapSource.Create(colorFrameDescription.Width, colorFrameDescription.Height, 96, 96, PixelFormats.Bgr32, null, pixels, stride);
+        }
+
+        private unsafe Bitmap getBitmap(BitmapSource source)
+        {
+            Bitmap bitmap;
+            using (MemoryStream outStream = new MemoryStream())
+            {
+                BitmapEncoder enc = new BmpBitmapEncoder();
+                enc.Frames.Add(BitmapFrame.Create(source));
+                enc.Save(outStream);
+                bitmap = new Bitmap(outStream);
+            }
+
+            return bitmap;
+        }
+
+        private void RenderDepthPixels()
+        {
+            this.depthBitmap.Lock();
+            this.depthBitmap.WritePixels(new Int32Rect(0, 0, this.depthBitmap.PixelWidth, this.depthBitmap.PixelHeight), this.depthPixels, this.depthBitmap.PixelWidth, 0);
+            this.depthBitmap.Unlock();
+        }
+
+        /// <summary>
+        /// Directly accesses the underlying image buffer of the DepthFrame to create a displayable bitmap.
+        /// This function requires the /unsafe compiler option as we make use of direct access to the native memory pointed to by the depthFrameData pointer.
+        /// </summary>
+        /// <param name="depthFrameData">Pointer to the DepthFrame image data</param>
+        /// <param name="depthFrameDataSize">Size of the DepthFrame image data</param>
+        /// <param name="minDepth">The minimum reliable depth value for the frame</param>
+        /// <param name="maxDepth">The maximum reliable depth value for the frame</param>
+        private unsafe void ProcessDepthFrameData(IntPtr depthFrameData, uint depthFrameDataSize, ushort minDepth, ushort maxDepth)
+        {
+            // depth frame data is a 16 bit value
+            ushort* frameData = (ushort*)depthFrameData;
+
+            // convert depth to a visual representation
+            for (int i = 0; i < (int)(depthFrameDataSize / this.depthFrameDescription.BytesPerPixel); ++i)
+            {
+                // Get the depth for this pixel
+                ushort depth = frameData[i];
+                // To convert to a byte, we're mapping the depth value to the byte range. Values outside the reliable depth range are mapped to 0 (black).
+                this.depthPixels[i] = (byte)(depth >= minDepth && depth <= maxDepth ? (depth / MapDepthToByte) : 0);
+            }
+        }
+
+        public unsafe BitmapSource getDepthImage(DepthFrame depthFrame)
+        {
+            int width = depthFrame.FrameDescription.Width;
+            int height = depthFrame.FrameDescription.Height;
+
+            ushort minDepth = depthFrame.DepthMinReliableDistance;
+            ushort maxDepth = depthFrame.DepthMaxReliableDistance;
+
+            ushort[] depthData = new ushort[width * height];
+            byte[] pixelData = new byte[width * height * (PixelFormats.Bgr32.BitsPerPixel + 7) / 8];
+
+            int stride = width * PixelFormats.Bgr32.BitsPerPixel / 8;
+
+            depthFrame.CopyFrameDataToArray(depthData);
+
+            int colorIndex = 0;
+            for (int depthIndex = 0; depthIndex < depthData.Length; ++depthIndex)
+            {
+                ushort depth = depthData[depthIndex];
+                byte intensity = (byte)(depth >= minDepth && depth <= maxDepth ? depth : 0);
+                pixelData[colorIndex++] = intensity; // Blue
+                pixelData[colorIndex++] = intensity; // Green
+                pixelData[colorIndex++] = intensity; // Red
+                ++colorIndex;
+            }
+
+            return BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgr32, null, pixelData, stride);
+        }
 
         public static BitmapSource ConvertBitmap(Bitmap source)
         {
@@ -364,11 +711,10 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         /// <param name="e">event arguments</param>
         private void MainWindow_Closing(object sender, CancelEventArgs e)
         {
-            if (this.colorFrameReader != null)
+            if (this.multiSourceFrameReader != null)
             {
-                // ColorFrameReder is IDisposable
-                this.colorFrameReader.Dispose();
-                this.colorFrameReader = null;
+                this.multiSourceFrameReader.Dispose();
+                this.multiSourceFrameReader = null;
             }
 
             if (this.kinectSensor != null)
@@ -438,7 +784,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                 string path = Path.Combine(myPhotos, "KinectScreenshot-Color-test.png");
                 Bitmap bitmap = (Bitmap)Image.FromFile(path, true);
                 detectShapeCandidates(ref bitmap, false);
-                writeToBackBuffer(ConvertBitmap(bitmap));
+                writeToBackBuffer(ConvertBitmap(bitmap), this.colorBitmap);
                 bitmap.Dispose();
             }
             catch (System.IO.FileNotFoundException)
