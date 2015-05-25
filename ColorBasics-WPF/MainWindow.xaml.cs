@@ -265,7 +265,6 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             SimpleBlobDetector detectCircleBlobs = new SimpleBlobDetector(circleParameters);
             keyCirclePoints = detectCircleBlobs.Detect(testMat);
             detectCircleBlobs.Dispose();
-                
 
             if (keyCirclePoints != null || keySquarePoints != null)
             {
@@ -298,61 +297,12 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                 }
             }
 
-            //checkRectangle(ref testMat);
-
             //Cv2.CvtColor(testMat, testMat, ColorConversion.BgraToGray, 0);
             //testMat = testMat.GaussianBlur(new OpenCvSharp.CPlusPlus.Size(1, 1), 5, 5, BorderType.Default);
             //testMat = testMat.Canny(0.5 * mean, 1.2 * mean, 3, true);
 
             bitmap = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(testMat);
             testMat.Dispose();
-        }
-
-        private unsafe void checkRectangle(ref Mat testMat)
-        {
-            int xCoord = 440;
-            int yCoord = 440;
-            int xSize = 250;
-            int ySize = 350;
-            RotatedRect rRect = new RotatedRect(new Point2f(xCoord, yCoord), new Size2f(xSize, ySize), 0);
-            Point2f[] vertices = rRect.Points();
-
-            for (int i = 0; i < 4; i++)
-            {
-                Cv2.Line(testMat, vertices[i], vertices[(i + 1) % 4], new Scalar(0, 0, 255));
-            }
-
-            Vec3b color;
-            double blue = 0;
-            double green = 0;
-            double red = 0;
-
-            for (int i = 0; i < xSize; i++)
-            {
-                for (int j = 0; j < ySize; j++)
-                {
-                    color = testMat.At<Vec3b>(yCoord + j - (ySize / 2), xCoord + i - (xSize / 2));
-
-                    //testMat.Set<Vec3b>(yCoord + i, xCoord + j, new Vec3b(0, 0, 255));
-                    blue += Double.Parse(color.Item0.ToString()) / (xSize * ySize);
-                    green += Double.Parse(color.Item1.ToString()) / (xSize * ySize);
-                    red += Double.Parse(color.Item2.ToString()) / (xSize * ySize);
-
-                }
-            }
-
-            if (red > 180 && green < 80 && blue < 80)
-            {
-                Console.Out.WriteLine("RED");
-            }
-            if (red < 90 && green > 180 && blue < 90)
-            {
-                Console.Out.WriteLine("GREEN");
-            }
-            if (red < 90 && green < 90 && blue > 180)
-            {
-                Console.Out.WriteLine("BLUE");
-            }
         }
 
         //TODO: Request certain pixels
@@ -472,8 +422,6 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                     MapColortoDepth(startX, startY, width, height, "feature");
                     featureRect = new Rectangle(startX, startY, width, height);
                 }
-                //Console.Out.WriteLine("baseR: " + baseRect.Left.ToString() + " baseF: " + featureRect.Left.ToString());
-
                 
                 // Check if there is a touch?
                 if (isCalibrated == true)
@@ -599,13 +547,18 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         {
             ticksNow = DateTime.Now.Ticks;
             fps = ((float)TICKS_PER_SECOND) / (DateTime.Now.Ticks - prevTick); // 1 / ((ticksNow - prevTick) / TICKS_PER_SECOND);
-            //Console.Out.WriteLine("fps: " + (int)(fps + 0.5));
             prevTick = ticksNow;
 
             //Calculate Mean
             sumFps += fps;
             counter++;
             this.FpsText = "FPS = " + fps.ToString();
+        }
+
+        //helper method to calculate the Euclidian distance
+        private double euclidianDistance(int b1, int b2, int g1, int g2, int r1, int r2)
+        {
+            return Math.Sqrt((b1 - b2) * (b1 - b2) + (r1 - r2) * (r1 - r2) + (g1 - g2) * (g1 - g2));
         }
 
         private BitmapSource ConvertBitmap(Bitmap source)
