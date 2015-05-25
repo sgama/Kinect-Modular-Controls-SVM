@@ -85,6 +85,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             public ShapeType type;
             public OpenCvSharp.CPlusPlus.Rect boundingRect;
             public Double depth = Double.MinValue;
+            public string title;
 
             public enum ShapeType
             {
