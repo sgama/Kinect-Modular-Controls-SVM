@@ -351,19 +351,6 @@ namespace Microsoft.Samples.Kinect.ColorBasics
 
         }
 
-        private unsafe void writeToBackBuffer(BitmapSource source, WriteableBitmap bitmap)
-        {
-            bitmap.Lock();
-            int stride = source.PixelWidth * (source.Format.BitsPerPixel / 8); // Calculate stride of source
-            byte[] data = new byte[stride * source.PixelHeight]; // Create data array to hold source pixel data
-            source.CopyPixels(data, stride, 0); // Copy source image pixels to the data array
-
-            // Write the pixel data to the WriteableBitmap.
-            bitmap.WritePixels(new Int32Rect(0, 0, source.PixelWidth, source.PixelHeight), data, stride, 0);
-            bitmap.AddDirtyRect(new Int32Rect(0, 0, source.PixelWidth, source.PixelHeight));
-            bitmap.Unlock();
-        }
-
         private void detectShapeCandidates(ref Bitmap bitmap, Boolean saveShapes)
         {
             string myPhotos = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
@@ -478,6 +465,19 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             svm.Load(Path.Combine(folderPath, "trained_svm"));
 
             return svm;
+        }
+
+        private unsafe void writeToBackBuffer(BitmapSource source, WriteableBitmap bitmap)
+        {
+            bitmap.Lock();
+            int stride = source.PixelWidth * (source.Format.BitsPerPixel / 8); // Calculate stride of source
+            byte[] data = new byte[stride * source.PixelHeight]; // Create data array to hold source pixel data
+            source.CopyPixels(data, stride, 0); // Copy source image pixels to the data array
+
+            // Write the pixel data to the WriteableBitmap.
+            bitmap.WritePixels(new Int32Rect(0, 0, source.PixelWidth, source.PixelHeight), data, stride, 0);
+            bitmap.AddDirtyRect(new Int32Rect(0, 0, source.PixelWidth, source.PixelHeight));
+            bitmap.Unlock();
         }
 
         private unsafe BitmapSource getColorImage(FrameDescription colorFrameDescription, ColorFrame colorFrame)
