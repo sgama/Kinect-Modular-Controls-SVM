@@ -90,6 +90,8 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             public OpenCvSharp.CPlusPlus.Rect bounds;
             public ShapeType type;
 
+            public Double depth = -1;
+
             public Shape(ShapeType type, OpenCvSharp.CPlusPlus.Rect bounds)
             {
                 this.type = type;
@@ -267,7 +269,6 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                     int startY = (int)(circleVerticies[1].Y);
                     MapColortoDepth(startX, startY, this.featureSize, this.featureSize, "feature");
                     featureRect = new Rectangle(startX, startY, this.featureSize, this.featureSize);
-                    Console.Out.WriteLine("Saw Finger at " + startX.ToString() + " & " + startY.ToString());
                 }
 
                 for (int i = 0; i < this.controls.Count; i++)
@@ -276,12 +277,12 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                     if (baseRect.IntersectsWith(featureRect))
                     {
                         Console.Out.WriteLine("Intersection with " + i.ToString());
-                        /*
-                        double diff = featureDepth - baseDepth;
+                        
+                        double diff = featureDepth - this.controls[i].depth;
                         if (Math.Abs(diff) < 0.5)
                         {
                             Console.Out.WriteLine("Difference: " + diff.ToString() + " CONTACT");
-                        } */
+                        } 
 
                     }
                 }
@@ -302,7 +303,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         }
 
         //TODO: Request certain pixels
-        private void MapColortoDepth(int startX, int startY, int widthX, int heightY, string opt = null)
+        private void MapColortoDepth(int startX, int startY, int widthX, int heightY, string opt = null, int shapeIndex = -1)
         {
             int colorWidth = 1920;
             int colorHeight = 1080;
@@ -335,9 +336,9 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             }
             if (depthCount != 0)
             {
-                if (opt == "base")
+                if (opt == "base" && shapeIndex != -1)
                 {
-                    this.baseDepth = depthCount;
+                    this.controls[shapeIndex].depth = depthCount;
                 }
                 if (opt == "feature")
                 {
