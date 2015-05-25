@@ -54,7 +54,6 @@ namespace Microsoft.Samples.Kinect.ColorBasics
 
         private Boolean isCalibrated = false;
         private KeyPoint[] keyCirclePoints = null;
-        private KeyPoint[] keySquarePoints = null;
 
         private double baseDepth;
         private double featureDepth;
@@ -205,9 +204,10 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                 {
                     case State.DETECT_CONTROLS:
                         detectShapeCandidates(ref colorBitmap, false);
-                        OpenCV(ref colorBitmap);
                         break;
                     case State.MAIN:
+                        OpenCV(ref colorBitmap);
+                        checkKeyPoints();
                         break;
                 }
 
@@ -218,14 +218,14 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                 //colorFrame.CopyConvertedFrameDataToArray(this.colorFrameData, ColorImageFormat.Bgra);
 
                 // But we use this instead so we can use the mat, without it bounding boxes are not shown.
-                this.colorBitmap.CopyPixels(this.colorFrameData, this.colorBitmap.BackBufferStride, 0);
+                //this.colorBitmap.CopyPixels(this.colorFrameData, this.colorBitmap.BackBufferStride, 0);
 
-                checkKeyPoints();
+                
 
 
-                this.colorBitmap.Lock();
-                this.colorBitmap.WritePixels(new Int32Rect(0, 0, this.colorFrameDescription.Width, this.colorFrameDescription.Height), this.colorFrameData, this.colorFrameDescription.Width * 4, 0);
-                this.colorBitmap.Unlock();
+               // this.colorBitmap.Lock();
+                //this.colorBitmap.WritePixels(new Int32Rect(0, 0, this.colorFrameDescription.Width, this.colorFrameDescription.Height), this.colorFrameData, this.colorFrameDescription.Width * 4, 0);
+                //this.colorBitmap.Unlock();
                 // We're done with the ColorFrame 
                 Array.Clear(this.colorFrameData, 0, this.colorFrameData.Length);
                 colorFrame.Dispose();
@@ -250,26 +250,9 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         // TODO: Refactor method to take in parameters
         private void checkKeyPoints()
         {
-            if (keyCirclePoints != null || keySquarePoints != null)
+            
+            if (keyCirclePoints != null)
             {
-                if (isCalibrated == false)
-                {
-                    for (int i = 0; i < keySquarePoints.Length; i++)
-                    {
-                        OpenCvSharp.CPlusPlus.Point coordinate = keySquarePoints[i].Pt;
-                        RotatedRect rRect = new RotatedRect(new Point2f(coordinate.X, coordinate.Y), new Size2f(50, 50), 0);
-                        Point2f[] squareVerticies = rRect.Points();
-
-                        int height = (int)(squareVerticies[0].Y - squareVerticies[1].Y);
-                        int width = (int)(squareVerticies[2].X - squareVerticies[1].X);
-                        int startX = (int)(squareVerticies[0].X);
-                        int startY = (int)(squareVerticies[1].Y);
-                        MapColortoDepth(startX, startY, width, height, "base");
-                        baseRect = new Rectangle(startX, startY, width, height);
-                    }
-                }
-
-
                 for (int i = 0; i < keyCirclePoints.Length; i++)
                 {
                     OpenCvSharp.CPlusPlus.Point coordinate = keyCirclePoints[i].Pt;
@@ -282,23 +265,29 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                     int width = (int)(circleVerticies[2].X - circleVerticies[1].X);
                     int startX = (int)(circleVerticies[0].X);
                     int startY = (int)(circleVerticies[1].Y);
-                    MapColortoDepth(startX, startY, width, height, "feature");
-                    featureRect = new Rectangle(startX, startY, width, height);
+                    MapColortoDepth(startX, startY, this.featureSize, this.featureSize, "feature");
+                    featureRect = new Rectangle(startX, startY, this.featureSize, this.featureSize);
+                    Console.Out.WriteLine("Saw Finger at " + startX.ToString() + " & " + startY.ToString());
                 }
 
-                // Check if there is a touch?
-                if (isCalibrated == true)
+                for (int i = 0; i < this.controls.Count; i++)
                 {
+                    baseRect = new Rectangle(this.controls[i].bounds.TopLeft.X, this.controls[i].bounds.TopLeft.Y, this.controls[i].bounds.Width, this.controls[i].bounds.Height);
                     if (baseRect.IntersectsWith(featureRect))
                     {
+                        Console.Out.WriteLine("Intersection with " + i.ToString());
+                        /*
                         double diff = featureDepth - baseDepth;
                         if (Math.Abs(diff) < 0.5)
                         {
                             Console.Out.WriteLine("Difference: " + diff.ToString() + " CONTACT");
-                        }
+                        } */
 
                     }
                 }
+
+               //Console.Out.WriteLine("Saw Shape at " + this.controls[0].bounds.TopLeft.X.ToString() + " & " + this.controls[0].bounds.TopLeft.Y.ToString());
+
                 /*
                 double fingerDepth = getDepthForPixel(this.featureCoord[0], this.featureCoord[1], featureSize, featureSize);
                 double underFingerDepth = getDepthForPixel(this.featureCoord[0], this.featureCoord[1] + 50, featureSize, featureSize);
@@ -369,49 +358,35 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             mu.Dispose();
             sigma.Dispose();
 
-            if (isCalibrated == false)
-            {
-                SimpleBlobDetector.Params squareParameters = new SimpleBlobDetector.Params();
-                squareParameters.FilterByCircularity = true;
-                squareParameters.MinCircularity = (float)0.75;
-                squareParameters.MaxCircularity = (float)0.8;
-                squareParameters.FilterByArea = true;
-                squareParameters.MaxArea = 500;
-                SimpleBlobDetector detectSquareBlobs = new SimpleBlobDetector(squareParameters);
-                keySquarePoints = detectSquareBlobs.Detect(testMat);
-                detectSquareBlobs.Dispose();
-            }
-
             SimpleBlobDetector.Params circleParameters = new SimpleBlobDetector.Params();
             circleParameters.FilterByCircularity = true;
             circleParameters.MinCircularity = (float)0.85;
             circleParameters.MaxCircularity = (float)1;
+            circleParameters.MinArea = 30; // Modify the value on the fly (TODO use bigger circle)
             //circleParameters.FilterByArea = true;
             //circleParameters.MaxArea = 500;
+
             SimpleBlobDetector detectCircleBlobs = new SimpleBlobDetector(circleParameters);
             keyCirclePoints = detectCircleBlobs.Detect(testMat);
             detectCircleBlobs.Dispose();
 
-            if (keyCirclePoints != null || keySquarePoints != null)
+            if (keyCirclePoints != null)
             {
-                for (int i = 0; i < keySquarePoints.Length; i++)
+                this.featureSize = 0;
+                int fingerIndex =-1;
+                for (int i = 0; i < keyCirclePoints.Length; i++)
                 {
-                    OpenCvSharp.CPlusPlus.Point coordinate = keySquarePoints[i].Pt;
-                    testMat.Set<Vec3b>(coordinate.Y, coordinate.X, new Vec3b(255, 0, 0));
-                    RotatedRect rRect = new RotatedRect(new Point2f(coordinate.X, coordinate.Y), new Size2f(50, 50), 0);
-                    Point2f[] squareVerticies = rRect.Points();
-
-                    for (int j = 0; j < 4; j++)
+                    if (keyCirclePoints[i].Size >= this.featureSize)
                     {
-                        Cv2.Line(testMat, squareVerticies[j], squareVerticies[(j + 1) % 4], new Scalar(255, 0, 0));
+                        this.featureSize = (int)keyCirclePoints[i].Size;
+                        fingerIndex = i;
                     }
                 }
 
-                for (int i = 0; i < keyCirclePoints.Length; i++)
+                if (fingerIndex != -1)
                 {
-                    OpenCvSharp.CPlusPlus.Point coordinate = keyCirclePoints[i].Pt;
-                    int size = (int)(keyCirclePoints[i].Size);
-
+                    OpenCvSharp.CPlusPlus.Point coordinate = keyCirclePoints[fingerIndex].Pt;
+                    int size = (int)((keyCirclePoints[fingerIndex].Size)*Math.Sqrt(2));
                     testMat.Set<Vec3b>(coordinate.Y, coordinate.X, new Vec3b(0, 255, 0));
                     RotatedRect rRect = new RotatedRect(new Point2f(coordinate.X, coordinate.Y), new Size2f(size, size), 0);
                     Point2f[] circleVerticies = rRect.Points();
@@ -421,6 +396,8 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                         Cv2.Line(testMat, circleVerticies[j], circleVerticies[(j + 1) % 4], new Scalar(0, 255, 0));
                     }
                 }
+                
+                
             }
 
             //Cv2.CvtColor(testMat, testMat, ColorConversion.BgraToGray, 0);
@@ -446,7 +423,6 @@ namespace Microsoft.Samples.Kinect.ColorBasics
 
         private void detectShapeCandidates(ref Bitmap bitmap, Boolean saveShapes)
         {
-            Debug.WriteLine("Running OpenCV");
             string myPhotos = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
             Mat colorMat = BitmapConverter.ToMat(bitmap);
             MatOfDouble mu = new MatOfDouble();
