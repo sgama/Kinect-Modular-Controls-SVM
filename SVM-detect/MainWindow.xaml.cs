@@ -40,8 +40,6 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         private ColorSpacePoint[] depthMappedToColorPoints = null;
         private WriteableBitmap colorBitmap = null;
 
-        private byte[] colorFrameData;
-
         //Depth Frame
         private byte[] depthPixels = null;
         private const int MapDepthToByte = 8000 / 256;
@@ -60,6 +58,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
 
         private KeyPoint[] fingerPoints = null;
         private int fingerSize;
+        private int[] fingerCoordinates = new int[2];
         private double fingerDepth;
 
         //check performance in ticks
@@ -117,9 +116,8 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             this.depthFrameDescription = this.kinectSensor.DepthFrameSource.FrameDescription;
             this.colorFrameDescription = this.kinectSensor.ColorFrameSource.FrameDescription;
 
-            this.colorFrameData = new byte[this.colorFrameDescription.Width * this.colorFrameDescription.Height * 4];
             this.colorBitmap = new WriteableBitmap(this.colorFrameDescription.Width, this.colorFrameDescription.Height, 96.0, 96.0, PixelFormats.Bgr32, null); // create the bitmap to display  
-            
+
             this.depthMappedToColorPoints = new ColorSpacePoint[this.depthFrameDescription.LengthInPixels];
             this.depthPixels = new byte[this.depthFrameDescription.Width * this.depthFrameDescription.Height];
 
@@ -202,7 +200,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                         OpenCV(ref colorBitmap);
                         break;
                 }
-
+                
                 writeToBackBuffer(ConvertBitmap(colorBitmap), this.colorBitmap);
                 colorBitmap.Dispose();
                 colorFrame.Dispose();
@@ -265,6 +263,8 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                     testMat.Set<Vec3b>(coordinate.Y, coordinate.X, new Vec3b(0, 255, 0));
                     RotatedRect rRect = new RotatedRect(new Point2f(coordinate.X, coordinate.Y), new Size2f(this.fingerSize, this.fingerSize), 0);
                     Point2f[] circleVerticies = rRect.Points();
+                    //this.fingerCoordinates[0] = coordinate.X;
+                    //this.fingerCoordinates[1] = coordinate.Y;
                     int height = (int)(circleVerticies[0].Y - circleVerticies[1].Y);
                     int width = (int)(circleVerticies[2].X - circleVerticies[1].X);
                     int startX = (int)(circleVerticies[0].X);
@@ -282,7 +282,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                     List<int> intersectIndicies = new List<int>();
                     for (int i = 0; i < this.controls.Count; i++)
                     {
-                        if(this.controls[i].boundingRect.IntersectsWith(featureRect))
+                        if (this.controls[i].boundingRect.IntersectsWith(featureRect))
                         {
                             double diff = fingerDepth - this.controls[i].depth;
                             if (Math.Abs(diff) < 0.5)
@@ -293,9 +293,14 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                         }
                     }
 
+                    System.Text.StringBuilder append = new System.Text.StringBuilder();
                     if (intersectOccurance)
                     {
-                        this.OutputText = "Pressed Button "; //TODO Make this more obvious
+                        for (int i = 0; i < intersectIndicies.Count; i++)
+                        {
+                            append.Append(" " + this.controls[intersectIndicies[i]].title + " " + intersectIndicies[i].ToString());
+                        }
+                        this.OutputText = "Pressed Button" + append; //TODO Make this more obvious
                     }
                     else
                     {
@@ -334,10 +339,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                     if (colorX >= startX && colorX <= startX + widthX && colorY >= startY && colorY <= startY + heightY)
                     {
                         depthCount += Convert.ToDouble(depth) / (widthX * heightY);
-                        this.colorFrameData[colorImageIndex] = (byte)depth;
-                        this.colorFrameData[colorImageIndex + 1] = (byte)depth;
-                        this.colorFrameData[colorImageIndex + 2] = (byte)depth;
-                        //colorImageIndex++; //Skip Alpha for BGR32 
+
                     }
                 }
             }
@@ -371,16 +373,16 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             var contours = contourMat.FindContoursAsArray(ContourRetrieval.List, ContourChain.ApproxSimple);
 
             this.controls.Clear();
-            for (int j =0; j< contours.Length; j++)
+            for (int j = 0; j < contours.Length; j++)
             {
                 var poly = Cv2.ApproxPolyDP(contours[j], 0.01 * Cv2.ArcLength(contours[j], true), true);
                 int num = poly.Length;
-     
+
                 if (num >= 4 && num < 20)
                 {
                     var color = Scalar.Blue;
                     var rect = Cv2.BoundingRect(poly);
-                    
+
                     if (rect.Height < 20 || rect.Width < 20) continue;
                     if (saveShapes)
                     {
@@ -400,7 +402,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                         if (shapeClass >= 0)
                         {
                             Shape shape = null;
-                            switch ((int) shapeClass)
+                            switch ((int)shapeClass)
                             {
                                 case 0:
                                     color = Scalar.Red;
@@ -420,7 +422,8 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                         }
                         shapeMat.Dispose();
                     }
-                    else {
+                    else
+                    {
                         Cv2.Rectangle(colorMat, rect, color, 2);
                     }
                 }
@@ -744,14 +747,17 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                     this.controls[i].depth = shapeDepth;
                     if (shape.type == Shape.ShapeType.SQUARE)
                     {
+                        this.controls[i].title = "Square";
                         numSquares++;
                     }
                     if (shape.type == Shape.ShapeType.CIRCLE)
                     {
+                        this.controls[i].title = "Circle";
                         numCircles++;
                     }
                     if (shape.type == Shape.ShapeType.SLIDER)
                     {
+                        this.controls[i].title = "Slider";
                         numSliders++;
                     }
                     i++;
