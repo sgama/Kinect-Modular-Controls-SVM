@@ -53,7 +53,7 @@
     </Viewbox>
       
     <Button Grid.Row="2" Style="{StaticResource ScreenshotButton}" Content="Screenshot" Height="Auto" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="10 10 0 10" Click="ScreenshotButton_Click" />
-    <Button Grid.Row="2" Style="{StaticResource ScreenshotButton}" Content="Load SVM" Height="Auto" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="10 10 0 10" Click="LoadSvm_Click" />
+    <Button Grid.Row="2" Style="{StaticResource ScreenshotButton}" Content="Calibrate" Height="Auto" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="10 10 0 10" Click="Calibrate_Click" />
 
         <StatusBar Grid.Row="3" HorizontalAlignment="Stretch" Name="statusBar" VerticalAlignment="Bottom" Background="White" Foreground="{StaticResource MediumGreyBrush}">
         <StatusBarItem Content="{Binding StatusText}" />

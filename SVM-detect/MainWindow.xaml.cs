@@ -50,11 +50,42 @@ namespace Microsoft.Samples.Kinect.ColorBasics
 
         private CvSVM svm = null;
 
+        private List<Shape> controls = new List<Shape>();
+
+        private State state = State.DETECT_CONTROLS;
+
+        private enum State
+        {
+            DETECT_CONTROLS,
+            MAIN
+        }
+
+        public class Shape
+        {
+            public enum ShapeType
+            {
+                SQUARE,
+                CIRCLE,
+                SLIDER
+            }
+            public OpenCvSharp.CPlusPlus.Rect bounds;
+            public ShapeType type;
+
+            public Shape(ShapeType type, OpenCvSharp.CPlusPlus.Rect bounds)
+            {
+                this.type = type;
+                this.bounds = bounds;
+            }
+        }
+
         /// <summary>
         /// Initializes a new instance of the MainWindow class.
         /// </summary>
         public MainWindow()
         {
+            //load SVM
+            this.svm = loadSVM();
+
             this.kinectSensor = KinectSensor.GetDefault(); // get the kinectSensor object
 
             this.colorFrameReader = this.kinectSensor.ColorFrameSource.OpenReader(); // open the reader for the color frames
@@ -111,8 +142,15 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                                 bitmap = new Bitmap(outStream);
                             }
 
-                            detectShapeCandidates(ref bitmap, false);
-
+                            switch (state)
+                            {
+                                case State.DETECT_CONTROLS:
+                                    detectShapeCandidates(ref bitmap, false);
+                                    break;
+                                case State.MAIN:
+                                    break;
+                            }
+                            
                             writeToBackBuffer(ConvertBitmap(bitmap));
                             bitmap.Dispose();
                            
@@ -158,7 +196,8 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             Mat contourMat = new Mat(greyMat.Size(), colorMat.Type());
             greyMat.CopyTo(contourMat);
             var contours = contourMat.FindContoursAsArray(ContourRetrieval.List, ContourChain.ApproxSimple);
-            
+
+            this.controls.Clear();
             for (int j =0; j< contours.Length; j++)
             {
                 var poly = Cv2.ApproxPolyDP(contours[j], 0.01 * Cv2.ArcLength(contours[j], true), true);
@@ -187,19 +226,24 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                         float shapeClass = classifyShape(shapeMat, svm);
                         if (shapeClass >= 0)
                         {
+                            Shape shape = null;
                             switch ((int)shapeClass)
                             {
                                 case 0:
                                     color = Scalar.Red;
+                                    shape = new Shape(Shape.ShapeType.SQUARE, rect);
                                     break;
                                 case 1:
                                     color = Scalar.Yellow;
+                                    shape = new Shape(Shape.ShapeType.CIRCLE, rect);
                                     break;
                                 case 2:
                                     color = Scalar.Green;
+                                    shape = new Shape(Shape.ShapeType.SLIDER, rect);
                                     break;
                             }
                             Cv2.Rectangle(colorMat, rect, color, 2);
+                            this.controls.Add(shape);
                         }
                     }
                     else {
@@ -367,17 +411,22 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             }
         }
 
-        /// <summary>
-        /// Handles the user clicking on the train SVM button
-        /// </summary>
-        /// <param name="sender">object sending the event</param>
-        /// <param name="e">event arguments</param>
-        private void LoadSvm_Click(object sender, RoutedEventArgs e)
+        private void Calibrate_Click(object sender, RoutedEventArgs e)
         {
-            svm = loadSVM();
-            if (!this.kinectSensor.IsAvailable)
+            if (state == State.DETECT_CONTROLS)
             {
-                loadFakeKinect();
+                state = State.MAIN;
+
+                //shapes are now stored in this.controls
+                int numSquares = 0, numCircles = 0, numSliders = 0;
+                foreach (Shape shape in this.controls)
+                {
+                    if (shape.type == Shape.ShapeType.SQUARE) numSquares++;
+                    if (shape.type == Shape.ShapeType.CIRCLE) numCircles++;
+                    if (shape.type == Shape.ShapeType.SLIDER) numSliders++;
+                }
+                MessageBox.Show("Shapes calibrated. Squares: " + numSquares + ", Circles: " + numCircles + ", Sliders: " + numSliders);
+                
             }
         }
 
