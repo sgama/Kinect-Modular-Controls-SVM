@@ -21,6 +21,8 @@ namespace Microsoft.Samples.Kinect.ColorBasics
     using OpenCvSharp.Utilities;
     using OpenCvSharp.Extensions;
     using System.Collections.Generic;
+    using NAudio;
+    using NAudio.Wave;
 
 
     /// <summary>
@@ -67,6 +69,10 @@ namespace Microsoft.Samples.Kinect.ColorBasics
         private long prevTick = 0, ticksNow = 0;
         private double sumFps = 0;
         private int counter = 0;
+
+        private AudioFileReader audioFileReader;
+        private IWavePlayer waveOutDevice;
+        private float volumeFloat;
 
         private CvSVM shapeSVM = null;
         private List<Shape> controls = new List<Shape>();
@@ -133,6 +139,11 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             this.StatusText = this.kinectSensor.IsAvailable ? Properties.Resources.RunningStatusText : Properties.Resources.NoSensorStatusText; // set the status text
             this.DataContext = this; // use the window object as the view model in this simple example
             this.InitializeComponent(); // initialize the components (controls) of the window
+
+            audioFileReader = new AudioFileReader("\\Users\\Samson Gama\\Documents\\GitHub\\Kinect-Modular-Controls-SVM\\SVM-detect\\SafeAndSound.mp3");
+            waveOutDevice = new WaveOut();
+            waveOutDevice.Init(audioFileReader);
+            volumeFloat = 1.0f;
 
             if (!this.kinectSensor.IsAvailable)
             {
@@ -285,7 +296,8 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                         if (this.controls[i].boundingRect.IntersectsWith(featureRect))
                         {
                             double diff = fingerDepth - this.controls[i].depth;
-                            if (Math.Abs(diff) < 0.5)
+                            Console.Out.WriteLine(diff.ToString());
+                            if (Math.Abs(diff) < 0.12)
                             {
                                 intersectOccurance = true;
                                 intersectIndicies.Add(i);
@@ -293,12 +305,38 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                         }
                     }
 
+
                     System.Text.StringBuilder append = new System.Text.StringBuilder();
                     if (intersectOccurance)
                     {
                         for (int i = 0; i < intersectIndicies.Count; i++)
                         {
                             append.Append(" " + this.controls[intersectIndicies[i]].title + " " + intersectIndicies[i].ToString());
+
+                            
+
+                            if (this.controls[intersectIndicies[i]].title == "Circle")
+                            {
+                                if (waveOutDevice.PlaybackState == PlaybackState.Stopped)
+                                {
+                                    waveOutDevice.Play();
+                                }
+                               
+                            }
+                            if (this.controls[intersectIndicies[i]].title == "Square")
+                            {
+                                if (waveOutDevice.PlaybackState == PlaybackState.Playing)
+                                {
+                                    waveOutDevice.Pause();
+                                    waveOutDevice.Stop();
+                                }
+                                
+                            }
+                            else if (audioFileReader.Volume > 0.1f)
+                            {
+                                audioFileReader.Volume = 0.5f;
+                            }
+                            
                         }
                         this.OutputText = "Pressed Button" + append; //TODO Make this more obvious
                     }
