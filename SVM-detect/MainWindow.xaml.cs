@@ -23,6 +23,9 @@ namespace Microsoft.Samples.Kinect.ColorBasics
     using System.Collections.Generic;
     using NAudio;
     using NAudio.Wave;
+    using System.Runtime.InteropServices;
+    using NAudio.CoreAudioApi;
+
 
 
     /// <summary>
@@ -106,6 +109,55 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             }
         }
 
+        static class NativeMethods
+        {
+
+            [DllImport("winmm.dll", EntryPoint = "waveOutSetVolume")]
+            public static extern int WaveOutSetVolume(IntPtr hwo, uint dwVolume);
+
+
+            [DllImport("winmm.dll", SetLastError = true)]
+            public static extern bool PlaySound(string pszSound, IntPtr hmod, uint fdwSound);
+        }
+
+        private void SetVolume(int value)
+        {
+            if (value < 0)
+                value = 0;
+
+            if (value > 100)
+                value = 100;
+            try
+            {
+                MMDeviceEnumerator DevEnum = new MMDeviceEnumerator();
+                MMDevice device = DevEnum.GetDefaultAudioEndpoint((DataFlow)0, (Role)1);
+
+                device.AudioEndpointVolume.MasterVolumeLevelScalar = (float)value / 100.0f;
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        public int GetVolume()
+        {
+            int result = 100;
+            try
+            {
+                MMDeviceEnumerator DevEnum = new MMDeviceEnumerator();
+                MMDevice device = DevEnum.GetDefaultAudioEndpoint((DataFlow)0, (Role)1);
+                result = (int)(device.AudioEndpointVolume.MasterVolumeLevelScalar * 100);
+            }
+            catch (Exception)
+            {
+            }
+
+            return result;
+        }
+
+
+
+
         /// <summary>
         /// Initializes a new instance of the MainWindow class.
         /// </summary>
@@ -140,7 +192,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             this.DataContext = this; // use the window object as the view model in this simple example
             this.InitializeComponent(); // initialize the components (controls) of the window
 
-            audioFileReader = new AudioFileReader("\\Users\\Samson Gama\\Documents\\GitHub\\Kinect-Modular-Controls-SVM\\SVM-detect\\SafeAndSound.mp3");
+            audioFileReader = new AudioFileReader("\\Users\\Albert Hynek\\Documents\\GitHub\\UIE2015\\SVM-detect\\SafeAndSound.mp3");
             waveOutDevice = new WaveOut();
             waveOutDevice.Init(audioFileReader);
             volumeFloat = 1.0f;
@@ -332,9 +384,9 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                                 }
                                 
                             }
-                            else if (audioFileReader.Volume > 0.1f)
+                            if (this.controls[intersectIndicies[i]].title == "Slider" && GetVolume() > 10)
                             {
-                                audioFileReader.Volume = 0.5f;
+                                SetVolume(50);
                             }
                             
                         }
