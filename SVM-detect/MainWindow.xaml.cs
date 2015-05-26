@@ -192,7 +192,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
             this.DataContext = this; // use the window object as the view model in this simple example
             this.InitializeComponent(); // initialize the components (controls) of the window
 
-            audioFileReader = new AudioFileReader("\\Users\\Albert Hynek\\Documents\\GitHub\\UIE2015\\SVM-detect\\SafeAndSound.mp3");
+            audioFileReader = new AudioFileReader("\\Users\\Samson Gama\\Documents\\GitHub\\Kinect-Modular-Controls-SVM\\SVM-detect\\SafeAndSound.mp3");
             waveOutDevice = new WaveOut();
             waveOutDevice.Init(audioFileReader);
             volumeFloat = 1.0f;
@@ -326,8 +326,8 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                     testMat.Set<Vec3b>(coordinate.Y, coordinate.X, new Vec3b(0, 255, 0));
                     RotatedRect rRect = new RotatedRect(new Point2f(coordinate.X, coordinate.Y), new Size2f(this.fingerSize, this.fingerSize), 0);
                     Point2f[] circleVerticies = rRect.Points();
-                    //this.fingerCoordinates[0] = coordinate.X;
-                    //this.fingerCoordinates[1] = coordinate.Y;
+                    this.fingerCoordinates[0] = coordinate.X;
+                    this.fingerCoordinates[1] = coordinate.Y;
                     int height = (int)(circleVerticies[0].Y - circleVerticies[1].Y);
                     int width = (int)(circleVerticies[2].X - circleVerticies[1].X);
                     int startX = (int)(circleVerticies[0].X);
@@ -348,8 +348,8 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                         if (this.controls[i].boundingRect.IntersectsWith(featureRect))
                         {
                             double diff = fingerDepth - this.controls[i].depth;
-                            Console.Out.WriteLine(diff.ToString());
-                            if (Math.Abs(diff) < 0.12)
+                            //Console.Out.WriteLine(diff.ToString());
+                            if (Math.Abs(diff) < 0.3)
                             {
                                 intersectOccurance = true;
                                 intersectIndicies.Add(i);
@@ -364,10 +364,10 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                         for (int i = 0; i < intersectIndicies.Count; i++)
                         {
                             append.Append(" " + this.controls[intersectIndicies[i]].title + " " + intersectIndicies[i].ToString());
-
+                            Shape shape = this.controls[intersectIndicies[i]];
                             
 
-                            if (this.controls[intersectIndicies[i]].title == "Circle")
+                            if (shape.title == "Circle")
                             {
                                 if (waveOutDevice.PlaybackState == PlaybackState.Stopped)
                                 {
@@ -375,7 +375,7 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                                 }
                                
                             }
-                            if (this.controls[intersectIndicies[i]].title == "Square")
+                            if (shape.title == "Square")
                             {
                                 if (waveOutDevice.PlaybackState == PlaybackState.Playing)
                                 {
@@ -384,11 +384,32 @@ namespace Microsoft.Samples.Kinect.ColorBasics
                                 }
                                 
                             }
-                            if (this.controls[intersectIndicies[i]].title == "Slider" && GetVolume() > 10)
+                            if (shape.title == "Slider")
                             {
-                                SetVolume(50);
+                                int top = 0, bottom = 0, fingerPos = 0;
+                                if (shape.boundingRect.Height >= shape.boundingRect.Width)
+                                {
+                                    top = shape.boundingRect.Top;
+                                    bottom = shape.boundingRect.Bottom;
+                                    fingerPos = this.fingerCoordinates[1];
+                                }
+                                else
+                                {
+                                    top = shape.boundingRect.Left;
+                                    bottom = shape.boundingRect.Right;
+                                    fingerPos = this.fingerCoordinates[0];
+                                }
+                                
+                                int percentage = (int)(((double)Math.Abs(fingerPos - top) / (double)Math.Abs(bottom - top)) * (double)100);
+                                Console.Out.WriteLine(percentage.ToString());
+                                if (percentage >= 0 && percentage <= 100)
+                                {
+                                    SetVolume(percentage);
+                                    
+                                }
+                                //Console.Out.WriteLine("T-FP: " + (top - fingerPos).ToString() + "; top - bottom: " + (top - bottom).ToString());
                             }
-                            
+                            break;
                         }
                         this.OutputText = "Pressed Button" + append; //TODO Make this more obvious
                     }
